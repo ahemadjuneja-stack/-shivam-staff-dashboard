@@ -1,0 +1,6 @@
+{
+  "name": "Shivam Staff Dashboard",
+  "description": "Desktop-first admin dashboard for Shivam staff attendance, live payments, verifications, work logs, hisab upload, and shop settings.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
