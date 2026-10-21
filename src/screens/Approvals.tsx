@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, UserRole } from '../types';
+import { ROLES, getRoleDefinition } from '../roles';
 
 export default function ApprovalsScreen() {
   const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
@@ -150,7 +151,7 @@ export default function ApprovalsScreen() {
                       <p>Registered: <span className="text-slate-300">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Just now'}</span></p>
                     </div>
 
-                    {/* Role Selector Dropdown - Strict 'worker' | 'sales' */}
+                    {/* Role Selector Dropdown */}
                     <div className="mt-4 border-t border-slate-800 pt-3">
                       <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Select Role</label>
                       <select
@@ -158,8 +159,11 @@ export default function ApprovalsScreen() {
                         onChange={(e) => handleRoleChange(u.uid, e.target.value as UserRole)}
                         className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-bold text-white focus:border-indigo-500 focus:outline-none"
                       >
-                        <option value="worker">Worker (Duty &amp; Operations)</option>
-                        <option value="sales">Sales (Field &amp; Collection)</option>
+                        {ROLES.map((r) => (
+                          <option key={r.value} value={r.value}>
+                            {r.label} — {r.description}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -209,9 +213,12 @@ export default function ApprovalsScreen() {
                     <h4 className="text-xs font-bold text-white">{u.name}</h4>
                   </div>
                   <p className="text-[11px] font-mono text-indigo-400 mt-0.5">{u.mobile}</p>
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Role: <strong className="text-slate-200 uppercase">{u.role || 'worker'}</strong>
-                  </p>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${getRoleDefinition(u.role).badgeClass}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${getRoleDefinition(u.role).dotColor}`} />
+                      {getRoleDefinition(u.role).label}
+                    </span>
+                  </div>
                 </div>
                 <span className="rounded-lg bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300 border border-emerald-500/20">
                   ACTIVE

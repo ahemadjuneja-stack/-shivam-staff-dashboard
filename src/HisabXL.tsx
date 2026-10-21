@@ -332,7 +332,9 @@ export default function HisabXLScreen() {
         );
 
         // 7. Extract cell styles
-        const { styleTable, styleIndex } = extractStyles(ws, 53, 37);
+        const styleRows = Math.max(normalized.length, 53);
+        const styleCols = Math.max(normalized[0]?.length || 0, 37);
+        const { styleTable, styleIndex } = extractStyles(ws, styleRows, styleCols);
 
         parsedSheets[name] = {
           name,
@@ -500,7 +502,7 @@ export default function HisabXLScreen() {
   const visibleColCount = 29;
 
   return (
-    <div className="space-y-5 p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 font-sans">
+    <div className="hisab-fullbleed flex min-h-screen flex-col gap-2 bg-white text-black">
       {/* Toast Notification */}
       {toast && (
         <div
@@ -526,8 +528,8 @@ export default function HisabXLScreen() {
         </div>
       )}
 
-      {/* Top Bar: Month Selector + Upload + Download */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border border-slate-200 bg-white p-4 rounded-2xl shadow-sm gap-4">
+      {/* Top Bar: Month Selector + Upload + Download (Slim Sticky Ribbon) */}
+      <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-2 border-b border-gray-300 bg-white px-3 py-2">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
@@ -543,7 +545,7 @@ export default function HisabXLScreen() {
                 setSheetsCache({});
               }}
               disabled={loadingMonths || months.length === 0}
-              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:outline-none disabled:opacity-50"
             >
               {months.length === 0 ? (
                 <option value="">(No uploaded months yet)</option>
@@ -561,17 +563,17 @@ export default function HisabXLScreen() {
             onClick={() => fetchMonths(false, selectedMonthId)}
             title="Refresh Months"
             disabled={loadingMonths}
-            className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition disabled:opacity-50"
+            className="rounded border border-slate-200 bg-slate-50 p-1.5 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition disabled:opacity-50"
           >
-            <RefreshCw className={`h-4 w-4 ${loadingMonths ? 'animate-spin text-indigo-600' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-indigo-600' : ''}`} />
           </button>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <button
             onClick={handleStartUpload}
-            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition"
+            className="flex items-center gap-1.5 rounded bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 transition"
           >
             <Upload className="h-3.5 w-3.5" />
             <span>⬆ XL Upload Karein</span>
@@ -580,7 +582,7 @@ export default function HisabXLScreen() {
           <button
             onClick={handleDownloadWorkbook}
             disabled={!currentMonth || !selectedMonthId}
-            className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition disabled:opacity-40"
           >
             <Download className="h-3.5 w-3.5 text-emerald-600" />
             <span>⬇ XL Download</span>
@@ -588,10 +590,10 @@ export default function HisabXLScreen() {
         </div>
       </div>
 
-      {/* Hisab Check Verification Report Card */}
+      {/* Hisab Check Verification Report Banner */}
       {verificationReport && (
         <div
-          className={`relative rounded-2xl p-4 shadow-sm border transition-all ${
+          className={`relative rounded-none border-y border-x-0 px-3 py-2 text-xs transition-all ${
             verificationReport.mismatches.length === 0
               ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
               : 'border-amber-300 bg-amber-50 text-amber-900'
@@ -601,40 +603,40 @@ export default function HisabXLScreen() {
           <button
             onClick={() => setVerificationReport(null)}
             title="Close Report"
-            className="absolute top-3 right-3 rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-800 transition"
+            className="absolute top-2 right-3 rounded p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-800 transition"
           >
             <X className="h-4 w-4" />
           </button>
 
           {verificationReport.mismatches.length === 0 ? (
             <div className="flex items-start gap-2.5 pr-8">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-bold text-emerald-900">
+                <p className="font-bold text-emerald-900">
                   ✅ Hisab Check: {verificationReport.daySheetCount} sheets me calculation bilkul Excel jaisa hai ({verificationReport.totalChecked} cells milaan kiye)
                 </p>
-                <p className="text-xs text-emerald-700 mt-1">
+                <p className="text-[11px] text-emerald-700 mt-0.5">
                   App auto-calculation engine matches stored Excel numbers 100%.
                 </p>
               </div>
             </div>
           ) : (
-            <div className="space-y-2 pr-8">
+            <div className="space-y-1.5 pr-8">
               <div className="flex items-start gap-2.5">
-                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-bold text-amber-900">
+                  <p className="font-bold text-amber-900">
                     ⚠️ Hisab Check: {verificationReport.mismatches.length} cells me app aur Excel ke numbers alag hain
                   </p>
-                  <p className="text-xs text-amber-700 mt-0.5">
+                  <p className="text-[11px] text-amber-700">
                     (Showing up to 20 differences below. Full list logged to browser console)
                   </p>
                 </div>
               </div>
 
-              <div className="mt-2 rounded-xl border border-amber-200 bg-white p-3 text-xs font-mono max-h-48 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-amber-300 shadow-inner">
+              <div className="mt-1 rounded border border-amber-200 bg-white p-2 font-mono max-h-40 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-amber-300 shadow-inner">
                 {verificationReport.mismatches.slice(0, 20).map((m, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-4 py-0.5 border-b border-amber-100 last:border-0 text-slate-700">
+                  <div key={idx} className="flex items-center justify-between gap-4 py-0.5 border-b border-amber-100 last:border-0 text-slate-700 text-[11px]">
                     <span>
                       Sheet <strong className="text-amber-800">'{m.sheetName}'</strong> → <span className="text-sky-700 font-bold">{m.cell}</span>
                     </span>
@@ -644,7 +646,7 @@ export default function HisabXLScreen() {
                   </div>
                 ))}
                 {verificationReport.mismatches.length > 20 && (
-                  <p className="text-[11px] text-amber-700 italic pt-1">
+                  <p className="text-[10px] text-amber-700 italic pt-0.5">
                     ... and {verificationReport.mismatches.length - 20} more mismatches (see console)
                   </p>
                 )}
@@ -654,117 +656,90 @@ export default function HisabXLScreen() {
         </div>
       )}
 
-      {/* Live Formula Total Chips (4 colored chips above the table) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Live Formula Total Strip (Slim inline strip) */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-gray-200 bg-gray-50 px-3 py-1.5">
         {/* 1. Cash 1no (AH53) */}
-        <div className="rounded-2xl border border-emerald-200 bg-white p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Cash 1no</p>
-          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
-            ₹{liveChips.cash1no.toLocaleString('en-IN')}
-          </p>
-          <p className="text-[10px] text-emerald-600/80 mt-1 font-medium">Formula: AH53 = SUM(AH2:AH50)</p>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-600 shrink-0" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Cash 1no:</span>
+          <span className="font-mono font-bold text-gray-900">₹{liveChips.cash1no.toLocaleString('en-IN')}</span>
+          <span className="text-[10px] text-gray-500 font-medium">(AH53 = SUM(AH2:AH50))</span>
         </div>
 
         {/* 2. Recipt 1no (AI53) */}
-        <div className="rounded-2xl border border-sky-200 bg-white p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-sky-700">Recipt 1no</p>
-          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
-            ₹{liveChips.recipt1no.toLocaleString('en-IN')}
-          </p>
-          <p className="text-[10px] text-sky-600/80 mt-1 font-medium">Formula: AI53 = SUM(AI2:AI50)</p>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="h-2.5 w-2.5 rounded-full bg-sky-600 shrink-0" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Recipt 1no:</span>
+          <span className="font-mono font-bold text-gray-900">₹{liveChips.recipt1no.toLocaleString('en-IN')}</span>
+          <span className="text-[10px] text-gray-500 font-medium">(AI53 = SUM(AI2:AI50))</span>
         </div>
 
         {/* 3. Csah 2no (AJ53) */}
-        <div className="rounded-2xl border border-amber-200 bg-white p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Csah 2no</p>
-          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
-            ₹{liveChips.csah2no.toLocaleString('en-IN')}
-          </p>
-          <p className="text-[10px] text-amber-600/80 mt-1 font-medium">Formula: AJ53 = SUM(AJ2:AJ50)</p>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-500 shrink-0" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Csah 2no:</span>
+          <span className="font-mono font-bold text-gray-900">₹{liveChips.csah2no.toLocaleString('en-IN')}</span>
+          <span className="text-[10px] text-gray-500 font-medium">(AJ53 = SUM(AJ2:AJ50))</span>
         </div>
 
         {/* 4. Recipt 2no (AK53) */}
-        <div className="rounded-2xl border border-purple-200 bg-white p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-purple-700">Recipt 2no</p>
-          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
-            ₹{liveChips.recipt2no.toLocaleString('en-IN')}
-          </p>
-          <p className="text-[10px] text-purple-600/80 mt-1 font-medium">Formula: AK53 = SUM(AK2:AK50)</p>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="h-2.5 w-2.5 rounded-full bg-purple-600 shrink-0" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Recipt 2no:</span>
+          <span className="font-mono font-bold text-gray-900">₹{liveChips.recipt2no.toLocaleString('en-IN')}</span>
+          <span className="text-[10px] text-gray-500 font-medium">(AK53 = SUM(AK2:AK50))</span>
         </div>
       </div>
 
-      {/* Day Tabs Bar (Numeric sheets 1..31 + non-numeric sheets like Reminder) */}
+      {/* Day Tabs Bar (Excel sheet tabs look) */}
       {sortedSheetNames.length > 0 ? (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-300">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 shrink-0 mr-1.5 flex items-center gap-1">
-            <Layers className="h-3.5 w-3.5 text-indigo-600" />
-            Sheets:
-          </span>
+        <div className="flex items-stretch gap-0 overflow-x-auto border-b border-gray-300 bg-gray-100 px-1">
           {sortedSheetNames.map((name) => {
             const isSelected = activeSheetName === name;
-            const isNumeric = !isNaN(Number(name));
             return (
               <button
                 key={name}
                 onClick={() => setActiveSheetName(name)}
-                className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition shadow-sm ${
+                className={`shrink-0 whitespace-nowrap border-r border-gray-200 px-3.5 py-1.5 text-xs font-semibold transition ${
                   isSelected
-                    ? 'bg-indigo-600 text-white shadow-indigo-600/20'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                    ? 'bg-white font-bold text-emerald-700 shadow-[inset_0_2px_0_0_rgb(5_150_105)]'
+                    : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                {isNumeric ? `Day ${name}` : name}
+                {name}
               </button>
             );
           })}
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">
+        <div className="bg-gray-50 p-6 text-center text-xs text-gray-500">
           Koi mahina ya sheets uplabdh nahi hain. Upar diye gaye button se Excel file upload karein.
         </div>
       )}
 
       {/* Excel Sheet Table View */}
       {loadingSheet ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500 shadow-sm">
+        <div className="bg-gray-50 p-10 text-center text-xs text-gray-500">
           <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent"></div>
-          <p className="text-xs font-semibold">Loading sheet "{activeSheetName}"...</p>
+          <p className="font-semibold">Loading sheet "{activeSheetName}"...</p>
         </div>
       ) : liveGrid.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500 text-xs shadow-sm">
+        <div className="bg-gray-50 p-10 text-center text-xs text-gray-500">
           Sheet data load nahi ho saka ya khali hai.
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-300 bg-white shadow-md overflow-hidden flex flex-col">
-          {/* Table Header Bar */}
-          <div className="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-800">Sheet: {activeSheetName}</span>
-              <span className="text-[10px] text-slate-500">
-                (53 rows × {visibleColCount} visible cols | Col AD..AK helper columns hidden)
-              </span>
-            </div>
-            <div className="flex items-center gap-3 text-[11px] text-slate-600">
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-emerald-50 border border-emerald-400"></span>
-                <span>Editable (Tap to edit)</span>
-              </span>
-            </div>
-          </div>
-
+        <div className="flex flex-1 flex-col overflow-hidden bg-white">
           {/* Excel Grid with Sticky Headers and Horizontal/Vertical Scroll */}
-          <div className="overflow-auto max-h-[620px] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
+          <div className="flex-1 overflow-auto bg-white" style={{ maxHeight: 'calc(100vh - 150px)' }}>
             <table
-              className="w-max border-collapse text-[12px] select-text bg-white"
-              style={{ minWidth: '100%' }}
+              className="w-max border-collapse select-text bg-white"
+              style={{ minWidth: '100%', fontFamily: "Calibri, 'Segoe UI', Arial, sans-serif" }}
             >
               {/* Sticky Column Headers: Row 0 / Column Letters A..AC */}
               <thead className="sticky top-0 z-20 bg-gray-100 shadow-sm">
                 <tr>
                   {/* Row Number Header Cell */}
-                  <th className="sticky left-0 z-30 bg-gray-100 border border-zinc-300 px-2.5 py-1 text-center font-mono text-[10px] text-gray-600 w-12 shrink-0">
-                    #
-                  </th>
+                  <th className="sticky left-0 z-30 border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-bold text-gray-700 w-12 shrink-0"></th>
                   {Array.from({ length: visibleColCount }).map((_, c) => {
                     const wch = currentSheet?.cols?.[c];
                     const widthPx = wch ? Math.max(Math.round(wch * 7), 55) : 75;
@@ -772,7 +747,7 @@ export default function HisabXLScreen() {
                       <th
                         key={c}
                         style={{ width: `${widthPx}px`, minWidth: `${widthPx}px` }}
-                        className="border border-zinc-300 bg-gray-100 px-2 py-1.5 text-center font-mono text-[11px] font-bold text-gray-700 uppercase tracking-wider"
+                        className="border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-bold text-gray-700"
                       >
                         {colToLetter(c)}
                       </th>
@@ -786,7 +761,7 @@ export default function HisabXLScreen() {
                 {liveGrid.map((row, r) => (
                   <tr key={r} className="hover:opacity-95 transition-opacity">
                     {/* Row Index Sticky Column (1-based) */}
-                    <td className="sticky left-0 z-10 bg-gray-100 border border-zinc-300 px-2 py-1 text-center font-mono text-[10px] text-gray-600 font-bold shrink-0">
+                    <td className="sticky left-0 z-10 border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-semibold text-gray-600 shrink-0">
                       {r + 1}
                     </td>
 
@@ -807,10 +782,10 @@ export default function HisabXLScreen() {
                         : null;
 
                       const bgColor = colorToCss(styleObj?.fill?.fgColor) ?? '#ffffff';
-                      const fontColor = colorToCss(styleObj?.font?.color) ?? '#1f2937';
+                      const fontColor = colorToCss(styleObj?.font?.color) ?? '#000000';
                       const fontWeight = styleObj?.font?.bold ? 'bold' : 'normal';
                       const fontStyle = styleObj?.font?.italic ? 'italic' : 'normal';
-                      const fontSize = styleObj?.font?.sz ? `${Math.round(styleObj.font.sz * 1.33)}px` : undefined;
+                      const fontSize = styleObj?.font?.sz ? `${Math.round(styleObj.font.sz * 1.33)}px` : '13px';
                       const textAlign = styleObj?.alignment?.horizontal ?? (isNumericValue(val) ? 'right' : 'left');
                       const whiteSpace = styleObj?.alignment?.wrapText ? 'normal' : 'nowrap';
 
@@ -846,20 +821,20 @@ export default function HisabXLScreen() {
                           colSpan={effectiveColSpan && effectiveColSpan > 1 ? effectiveColSpan : undefined}
                           onClick={() => handleCellClick(r, c)}
                           title={`${cellToA1(r, c)}: ${val ?? ''}${computed ? ' (Auto-computed)' : ' (Click to edit)'}`}
-                          className="px-2 py-1 text-[12px] cursor-pointer select-text truncate hover:opacity-90 transition-opacity"
+                          className="cursor-pointer select-text overflow-hidden px-1 py-[1px] align-middle hover:opacity-90"
                           style={{
                             backgroundColor: bgColor,
                             color: fontColor,
                             fontWeight,
                             fontStyle,
                             fontSize,
+                            lineHeight: 1.15,
                             textAlign: textAlign as any,
                             whiteSpace: whiteSpace as any,
                             borderTop,
                             borderBottom,
                             borderLeft,
-                            borderRight,
-                            maxWidth: '280px'
+                            borderRight
                           }}
                         >
                           {String(displayVal)}

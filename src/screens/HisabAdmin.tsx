@@ -30,7 +30,7 @@ export default function HisabAdminScreen() {
     const q = query(
       collection(db, 'users'),
       where('status', '==', 'active'),
-      where('role', '==', 'sales')
+      where('role', 'in', ['sales', 'salesman', 'sales_manager'])
     );
     const unsub = onSnapshot(q, (snapshot) => {
       const list: UserProfile[] = [];
