@@ -28,7 +28,8 @@ export interface PunchRecord {
   at: number;
   lat: number;
   lng: number;
-  dist: number;
+  dist?: number;
+  distM?: number;
 }
 
 export interface WorkLog {

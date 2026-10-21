@@ -2,45 +2,75 @@ import React, { useEffect, useState } from 'react';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   signOut,
   User
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import {
+  Table,
+  Users,
+  CheckSquare,
+  Activity,
+  FileSpreadsheet,
+  Settings,
+  Menu,
+  X,
+  LogOut,
+  ShieldAlert
+} from 'lucide-react';
 
-import LiveScreen from './screens/Live';
+import HisabXLScreen from './HisabXL';
 import ApprovalsScreen from './screens/Approvals';
 import WorkersScreen from './screens/Workers';
+import LiveScreen from './screens/Live';
 import HisabAdminScreen from './screens/HisabAdmin';
 import SettingsScreen from './screens/Settings';
 
-type AdminTab = 'live' | 'approvals' | 'workers' | 'hisab' | 'settings';
+type NavTab = 'hisabxl' | 'approvals' | 'workers' | 'live' | 'hisab' | 'settings';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<AdminTab>('live');
+  const [accessDenied, setAccessDenied] = useState<boolean>(false);
+
+  // Navigation state - Hisab XL is the default tab shown after admin login
+  const [activeTab, setActiveTab] = useState<NavTab>('hisabxl');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Login form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
+      setLoading(true);
       if (user) {
         try {
           const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-          setIsAdmin(adminDoc.exists());
+          if (adminDoc.exists()) {
+            setCurrentUser(user);
+            setIsAdmin(true);
+            setAccessDenied(false);
+          } else {
+            // Hard Admin Gate: Immediate signOut + hard block
+            await signOut(auth);
+            setCurrentUser(null);
+            setIsAdmin(false);
+            setAccessDenied(true);
+          }
         } catch {
+          await signOut(auth);
+          setCurrentUser(null);
           setIsAdmin(false);
+          setAccessDenied(true);
         }
       } else {
+        setCurrentUser(null);
         setIsAdmin(false);
       }
       setLoading(false);
@@ -48,28 +78,30 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const handleDemoLogin = () => {
-    setAuthError('');
-    const mockUser: any = {
-      uid: 'demo-shivam-owner-uid',
-      email: 'owner@shivam.com',
-      displayName: 'Shivam Owner',
-      isDemo: true
-    };
-    setCurrentUser(mockUser);
-    setIsAdmin(true);
-  };
+  // Real-time pending approvals count badge for sidebar
+  useEffect(() => {
+    if (!currentUser || !isAdmin) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'users'), where('status', '==', 'pending')),
+      (snap) => {
+        setPendingCount(snap.size || 0);
+      },
+      () => {
+        setPendingCount(0);
+      }
+    );
+    return () => unsub();
+  }, [currentUser, isAdmin]);
 
   const handleLogout = async () => {
     try {
-      if (!(currentUser as any)?.isDemo) {
-        await signOut(auth);
-      }
+      await signOut(auth);
     } catch (e) {
       console.warn('Sign out error:', e);
     } finally {
       setCurrentUser(null);
       setIsAdmin(false);
+      setAccessDenied(false);
     }
   };
 
@@ -77,41 +109,66 @@ export default function App() {
     e.preventDefault();
     setAuthError('');
     setAuthLoading(true);
+    setAccessDenied(false);
+
     try {
-      if (isRegisterMode) {
-        const res = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        // Pehli baar account banane par admin document create karne ka prayas
-        await setDoc(doc(db, 'admins', res.user.uid), {
-          name: 'Owner',
-          email: res.user.email,
-          createdAt: Date.now()
-        });
+      const res = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const adminDoc = await getDoc(doc(db, 'admins', res.user.uid));
+      if (adminDoc.exists()) {
+        setCurrentUser(res.user);
         setIsAdmin(true);
       } else {
-        const res = await signInWithEmailAndPassword(auth, email.trim(), password);
-        const adminDoc = await getDoc(doc(db, 'admins', res.user.uid));
-        setIsAdmin(adminDoc.exists());
+        await signOut(auth);
+        setCurrentUser(null);
+        setIsAdmin(false);
+        setAccessDenied(true);
       }
-    } catch (err: any) {
-      setAuthError(err.message || 'Authentication error. Details check karein.');
+    } catch (err: unknown) {
+      const error = err as Error;
+      setAuthError(error.message || 'Authentication error. Details check karein.');
     } finally {
       setAuthLoading(false);
     }
   };
 
+  // 1. Loading State: Full screen loader during auth/admin check
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-200">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
-          <p className="text-sm font-semibold tracking-wide text-slate-400">Loading Shivam Staff Dashboard...</p>
+          <p className="text-sm font-semibold tracking-wide text-slate-400">Verifying Admin Credentials...</p>
         </div>
       </div>
     );
   }
 
-  // Owner Login Screen
-  if (!currentUser) {
+  // 2. Hard Admin Gate: Access Denied Standalone Screen for Non-Admins
+  if (accessDenied) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
+        <div className="w-full max-w-md rounded-2xl border border-rose-900/50 bg-slate-900 p-8 shadow-2xl text-center space-y-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+            <ShieldAlert className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-bold text-white">Access Denied</h2>
+          <p className="text-xs text-rose-300 bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20 font-medium">
+            Ye account admin nahi hai. Aap sign out kar diye gaye hain.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAccessDenied(false)}
+            className="w-full rounded-xl bg-slate-800 border border-slate-700 py-3 text-xs font-bold text-white hover:bg-slate-700 transition"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Unauthenticated Owner Login Screen
+  if (!currentUser || !isAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
         <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/90 p-8 shadow-2xl backdrop-blur">
@@ -153,118 +210,195 @@ export default function App() {
               />
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
-                id="regSwitch"
-                checked={isRegisterMode}
-                onChange={(e) => setIsRegisterMode(e.target.checked)}
-                className="rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-0"
-              />
-              <label htmlFor="regSwitch" className="text-xs text-slate-400 cursor-pointer">
-                Pehli baar? Naya owner account banayein
-              </label>
-            </div>
-
             <button
               type="submit"
               disabled={authLoading}
               className="mt-2 w-full rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 disabled:opacity-50"
             >
-              {authLoading ? 'Signing in...' : isRegisterMode ? 'Create Owner Account' : 'Sign In to Dashboard'}
+              {authLoading ? 'Signing in...' : 'Sign In to Dashboard'}
             </button>
+
+            <p className="mt-4 text-center text-xs text-slate-500 font-medium">
+              Owner account Firebase Console se manage hota hai. Naye admin ke liye apne developer se sampark karein.
+            </p>
           </form>
-
-          <div className="relative my-5 flex items-center justify-center">
-            <div className="border-t border-slate-800 w-full"></div>
-            <span className="bg-slate-900 px-3 text-[10px] font-bold uppercase tracking-widest text-slate-500 absolute">
-              OR PREVIEW MODE
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleDemoLogin}
-            className="w-full rounded-xl border border-indigo-500/40 bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 px-4 py-3 text-sm font-bold text-indigo-300 shadow-lg shadow-indigo-950/50 hover:border-indigo-400 hover:text-white transition flex items-center justify-center gap-2 group"
-          >
-            <span className="text-base group-hover:scale-125 transition-transform">⚡</span>
-            <span>Instant Demo Owner Login</span>
-          </button>
-          <p className="mt-2 text-center text-[11px] text-slate-500">
-            One-click admin preview: Bypasses Firebase Auth restrictions to test all 5 tabs.
-          </p>
         </div>
       </div>
     );
   }
 
+  // 4. Navigation Menu Config (Hisab XL is FIRST tab)
+  const navItems = [
+    {
+      id: 'hisabxl' as NavTab,
+      title: '📊 Hisab XL',
+      icon: <Table className="h-4 w-4 text-emerald-400" />
+    },
+    {
+      id: 'approvals' as NavTab,
+      title: 'Verifications & Approvals',
+      icon: <CheckSquare className="h-4 w-4 text-indigo-400" />,
+      badge: pendingCount > 0 ? pendingCount : null
+    },
+    {
+      id: 'workers' as NavTab,
+      title: 'Staff Management',
+      icon: <Users className="h-4 w-4 text-sky-400" />
+    },
+    {
+      id: 'live' as NavTab,
+      title: 'Live Attendance',
+      icon: <Activity className="h-4 w-4 text-amber-400" />
+    },
+    {
+      id: 'hisab' as NavTab,
+      title: 'Hisab Upload & Miracle',
+      icon: <FileSpreadsheet className="h-4 w-4 text-teal-400" />
+    },
+    {
+      id: 'settings' as NavTab,
+      title: 'Settings & GPS',
+      icon: <Settings className="h-4 w-4 text-purple-400" />
+    }
+  ];
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'hisabxl':
+        return <HisabXLScreen />;
+      case 'approvals':
+        return <ApprovalsScreen />;
+      case 'workers':
+        return <WorkersScreen />;
+      case 'live':
+        return <LiveScreen />;
+      case 'hisab':
+        return <HisabAdminScreen />;
+      case 'settings':
+        return <SettingsScreen currentUser={currentUser} />;
+      default:
+        return <HisabXLScreen />;
+    }
+  };
+
   return (
-    <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100 font-sans">
-      {/* Top Navbar */}
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-6 py-3.5 backdrop-blur">
-        <div className="flex items-center gap-6">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-lg font-black tracking-wider text-white">SHIVAM STAFF</h1>
-            <span className="text-xs font-semibold uppercase tracking-widest text-indigo-400">Dashboard</span>
-          </div>
-
-          <nav className="flex items-center gap-1">
-            {[
-              { id: 'live' as AdminTab, label: 'LIVE' },
-              { id: 'approvals' as AdminTab, label: 'Verifications' },
-              { id: 'workers' as AdminTab, label: 'Workers + Stars' },
-              { id: 'hisab' as AdminTab, label: 'Hisab Upload' },
-              { id: 'settings' as AdminTab, label: 'Settings' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition ${
-                  activeTab === tab.id
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-xs font-semibold text-white">
-              {currentUser.email} {(currentUser as any)?.isDemo && <span className="text-[10px] text-indigo-400 font-mono">(Demo)</span>}
-            </p>
-            <p className={`text-[10px] font-bold ${isAdmin ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {isAdmin ? 'ADMIN AUTHENTICATED' : 'ADMIN DOC MISSING'}
-            </p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white"
-          >
-            Logout
-          </button>
-        </div>
-      </header>
-
-      {/* Admin UID Warning Banner */}
-      {!isAdmin && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 text-center text-xs text-amber-300">
-          ⚠️ <strong>Admin check failed:</strong> Aapka UID Firestore ke <code>admins</code> collection me nahi mila. 
-          Settings tab me jakar "Mujhe Admin Banao" button dabayein ya console se UID add karein.
-        </div>
+    <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans">
+      {/* Mobile Sidebar Overlay */}
+      {mobileMenuOpen && (
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+        ></div>
       )}
 
-      {/* Main Tab Screens */}
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
-        {activeTab === 'live' && <LiveScreen />}
-        {activeTab === 'approvals' && <ApprovalsScreen />}
-        {activeTab === 'workers' && <WorkersScreen />}
-        {activeTab === 'hisab' && <HisabAdminScreen />}
-        {activeTab === 'settings' && <SettingsScreen currentUser={currentUser} onAdminUpdated={() => setIsAdmin(true)} />}
-      </main>
+      {/* Sidebar Panel */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-slate-800 bg-slate-900/95 backdrop-blur transition-transform duration-300 lg:static lg:translate-x-0 ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Brand Header */}
+        <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black shadow-lg shadow-indigo-600/30">
+              S
+            </div>
+            <div>
+              <h1 className="text-sm font-black tracking-wider text-white">SHIVAM STAFF</h1>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Owner Dashboard</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 lg:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Navigation Item List */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5">
+          {navItems.map((item) => {
+            const isSelected = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 text-xs font-bold transition ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  {item.icon}
+                  <span>{item.title}</span>
+                </div>
+                {item.badge && (
+                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-slate-950">
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sidebar Footer User Profile */}
+        <div className="border-t border-slate-800 p-4 bg-slate-900">
+          <div className="flex items-center justify-between">
+            <div className="truncate">
+              <p className="text-xs font-bold text-white truncate">{currentUser.email}</p>
+              <p className="text-[10px] font-bold text-emerald-400">
+                ADMIN VERIFIED
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Logout"
+              className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 hover:text-white transition"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Wrapper */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Header */}
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-6 py-3.5 backdrop-blur">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 lg:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-wider text-white">
+                {navItems.find((n) => n.id === activeTab)?.title || 'Dashboard'}
+              </h2>
+              <p className="text-[11px] text-slate-400">Shivam Staff Management &amp; Enterprise Control Panel</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-400">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              Live Sync Active
+            </span>
+          </div>
+        </header>
+
+        {/* Dynamic Screen Content */}
+        <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+          {renderContent()}
+        </main>
+      </div>
     </div>
   );
 }
