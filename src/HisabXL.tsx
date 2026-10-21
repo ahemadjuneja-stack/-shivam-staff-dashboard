@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { collection, getDocs, doc, getDoc, query, orderBy } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import {
@@ -38,7 +38,9 @@ import {
   CellValue,
   verifySheet,
   MismatchItem,
-  VerificationResult
+  VerificationResult,
+  colorToCss,
+  extractStyles
 } from './hisabXL';
 
 const MONTH_NAMES = [
@@ -273,7 +275,7 @@ export default function HisabXLScreen() {
 
     try {
       const buffer = await selectedFile.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
+      const wb = XLSX.read(buffer, { type: 'array', cellStyles: true });
 
       if (!wb.SheetNames || wb.SheetNames.length === 0) {
         throw new Error('Excel file me koi sheet nahi mili.');
@@ -293,11 +295,11 @@ export default function HisabXLScreen() {
         const ws = wb.Sheets[name];
 
         // 1. Convert to 2D array of values
-        const rawAoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+        const rawAoa = XLSX.utils.sheet_to_json(ws, {
           header: 1,
           raw: true,
           defval: null
-        });
+        }) as unknown[][];
 
         // 2. Normalize to at least 53 rows × 37 columns
         const normalized = normalizeGrid(rawAoa, 53, 37);
@@ -322,18 +324,23 @@ export default function HisabXLScreen() {
         const finalGrid = isDay ? runFormulaEngine(normalized).grid : normalized;
 
         // 5. Extract merges
-        const merges: string[] = (ws['!merges'] || []).map((m) => XLSX.utils.encode_range(m));
+        const merges: string[] = (ws['!merges'] || []).map((m: any) => XLSX.utils.encode_range(m));
 
         // 6. Extract column widths
-        const cols: (number | null)[] = (ws['!cols'] || []).map((c) =>
+        const cols: (number | null)[] = (ws['!cols'] || []).map((c: any) =>
           c?.wch ? c.wch : c?.wpx ? Math.round(c.wpx / 7) : null
         );
+
+        // 7. Extract cell styles
+        const { styleTable, styleIndex } = extractStyles(ws, 53, 37);
 
         parsedSheets[name] = {
           name,
           grid: finalGrid,
           merges,
-          cols
+          cols,
+          styleTable,
+          styleIndex
         };
       }
 
@@ -493,38 +500,38 @@ export default function HisabXLScreen() {
   const visibleColCount = 29;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 p-4 sm:p-6 bg-slate-50 min-h-screen text-slate-800 font-sans">
       {/* Toast Notification */}
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-5 py-3.5 shadow-2xl backdrop-blur-md text-xs font-bold transition-all border ${
             toast.type === 'success'
-              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
               : toast.type === 'error'
-              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-              : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+              ? 'bg-rose-50 text-rose-800 border-rose-300'
+              : 'bg-indigo-50 text-indigo-800 border-indigo-300'
           }`}
         >
           {toast.type === 'success' ? (
-            <Check className="h-4 w-4 text-emerald-400" />
+            <Check className="h-4 w-4 text-emerald-600" />
           ) : toast.type === 'error' ? (
-            <AlertCircle className="h-4 w-4 text-rose-400" />
+            <AlertCircle className="h-4 w-4 text-rose-600" />
           ) : (
-            <Calculator className="h-4 w-4 text-indigo-400" />
+            <Calculator className="h-4 w-4 text-indigo-600" />
           )}
           <span>{toast.message}</span>
-          <button onClick={() => setToast(null)} className="ml-2 text-slate-400 hover:text-white">
+          <button onClick={() => setToast(null)} className="ml-2 text-slate-400 hover:text-slate-700">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
 
       {/* Top Bar: Month Selector + Upload + Download */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border border-slate-200 bg-white p-4 rounded-2xl shadow-sm gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-emerald-400" />
-            <h2 className="text-base font-bold text-white tracking-wide">HISAB XL — DAILY EXCEL ACCOUNTS</h2>
+            <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+            <h2 className="text-base font-bold text-slate-800 tracking-wide">HISAB XL — DAILY EXCEL ACCOUNTS</h2>
           </div>
 
           {/* Month Selector Dropdown */}
@@ -536,7 +543,7 @@ export default function HisabXLScreen() {
                 setSheetsCache({});
               }}
               disabled={loadingMonths || months.length === 0}
-              className="rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs font-bold text-white shadow focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-800 shadow-sm focus:border-indigo-500 focus:outline-none disabled:opacity-50"
             >
               {months.length === 0 ? (
                 <option value="">(No uploaded months yet)</option>
@@ -554,9 +561,9 @@ export default function HisabXLScreen() {
             onClick={() => fetchMonths(false, selectedMonthId)}
             title="Refresh Months"
             disabled={loadingMonths}
-            className="rounded-xl border border-slate-800 bg-slate-900 p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition disabled:opacity-50"
+            className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition disabled:opacity-50"
           >
-            <RefreshCw className={`h-4 w-4 ${loadingMonths ? 'animate-spin text-indigo-400' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${loadingMonths ? 'animate-spin text-indigo-600' : ''}`} />
           </button>
         </div>
 
@@ -564,7 +571,7 @@ export default function HisabXLScreen() {
         <div className="flex items-center gap-2.5">
           <button
             onClick={handleStartUpload}
-            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition"
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition"
           >
             <Upload className="h-3.5 w-3.5" />
             <span>⬆ XL Upload Karein</span>
@@ -573,9 +580,9 @@ export default function HisabXLScreen() {
           <button
             onClick={handleDownloadWorkbook}
             disabled={!currentMonth || !selectedMonthId}
-            className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-xs font-bold text-slate-200 shadow hover:bg-slate-800 hover:text-white transition disabled:opacity-40"
+            className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition disabled:opacity-40"
           >
-            <Download className="h-3.5 w-3.5 text-emerald-400" />
+            <Download className="h-3.5 w-3.5 text-emerald-600" />
             <span>⬇ XL Download</span>
           </button>
         </div>
@@ -584,29 +591,29 @@ export default function HisabXLScreen() {
       {/* Hisab Check Verification Report Card */}
       {verificationReport && (
         <div
-          className={`relative rounded-2xl p-4 shadow-lg border transition-all ${
+          className={`relative rounded-2xl p-4 shadow-sm border transition-all ${
             verificationReport.mismatches.length === 0
-              ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-200'
-              : 'border-amber-500/30 bg-amber-950/40 text-amber-200'
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+              : 'border-amber-300 bg-amber-50 text-amber-900'
           }`}
         >
           {/* Dismiss button */}
           <button
             onClick={() => setVerificationReport(null)}
             title="Close Report"
-            className="absolute top-3 right-3 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            className="absolute top-3 right-3 rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-800 transition"
           >
             <X className="h-4 w-4" />
           </button>
 
           {verificationReport.mismatches.length === 0 ? (
             <div className="flex items-start gap-2.5 pr-8">
-              <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-bold text-emerald-300">
+                <p className="text-sm font-bold text-emerald-900">
                   ✅ Hisab Check: {verificationReport.daySheetCount} sheets me calculation bilkul Excel jaisa hai ({verificationReport.totalChecked} cells milaan kiye)
                 </p>
-                <p className="text-xs text-emerald-400/80 mt-1">
+                <p className="text-xs text-emerald-700 mt-1">
                   App auto-calculation engine matches stored Excel numbers 100%.
                 </p>
               </div>
@@ -614,30 +621,30 @@ export default function HisabXLScreen() {
           ) : (
             <div className="space-y-2 pr-8">
               <div className="flex items-start gap-2.5">
-                <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-bold text-amber-300">
+                  <p className="text-sm font-bold text-amber-900">
                     ⚠️ Hisab Check: {verificationReport.mismatches.length} cells me app aur Excel ke numbers alag hain
                   </p>
-                  <p className="text-xs text-amber-400/80 mt-0.5">
+                  <p className="text-xs text-amber-700 mt-0.5">
                     (Showing up to 20 differences below. Full list logged to browser console)
                   </p>
                 </div>
               </div>
 
-              <div className="mt-2 rounded-xl border border-amber-500/20 bg-slate-950/60 p-3 text-xs font-mono max-h-48 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-amber-900/50">
+              <div className="mt-2 rounded-xl border border-amber-200 bg-white p-3 text-xs font-mono max-h-48 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-amber-300 shadow-inner">
                 {verificationReport.mismatches.slice(0, 20).map((m, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-4 py-0.5 border-b border-amber-900/20 last:border-0 text-slate-300">
+                  <div key={idx} className="flex items-center justify-between gap-4 py-0.5 border-b border-amber-100 last:border-0 text-slate-700">
                     <span>
-                      Sheet <strong className="text-amber-400">'{m.sheetName}'</strong> → <span className="text-sky-300 font-bold">{m.cell}</span>
+                      Sheet <strong className="text-amber-800">'{m.sheetName}'</strong> → <span className="text-sky-700 font-bold">{m.cell}</span>
                     </span>
                     <span>
-                      Excel <span className="text-emerald-400">{m.excelValue}</span>, App <span className="text-rose-400">{m.appValue}</span>
+                      Excel <span className="text-emerald-700 font-bold">{m.excelValue}</span>, App <span className="text-rose-600 font-bold">{m.appValue}</span>
                     </span>
                   </div>
                 ))}
                 {verificationReport.mismatches.length > 20 && (
-                  <p className="text-[11px] text-amber-400/70 italic pt-1">
+                  <p className="text-[11px] text-amber-700 italic pt-1">
                     ... and {verificationReport.mismatches.length - 20} more mismatches (see console)
                   </p>
                 )}
@@ -650,47 +657,47 @@ export default function HisabXLScreen() {
       {/* Live Formula Total Chips (4 colored chips above the table) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* 1. Cash 1no (AH53) */}
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-950/20 p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Cash 1no</p>
-          <p className="text-xl font-extrabold text-white mt-0.5 font-mono">
+        <div className="rounded-2xl border border-emerald-200 bg-white p-3.5 shadow-sm">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Cash 1no</p>
+          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
             ₹{liveChips.cash1no.toLocaleString('en-IN')}
           </p>
-          <p className="text-[10px] text-emerald-400/70 mt-1">Formula: AH53 = SUM(AH2:AH50)</p>
+          <p className="text-[10px] text-emerald-600/80 mt-1 font-medium">Formula: AH53 = SUM(AH2:AH50)</p>
         </div>
 
         {/* 2. Recipt 1no (AI53) */}
-        <div className="rounded-2xl border border-sky-500/20 bg-sky-950/20 p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-sky-400">Recipt 1no</p>
-          <p className="text-xl font-extrabold text-white mt-0.5 font-mono">
+        <div className="rounded-2xl border border-sky-200 bg-white p-3.5 shadow-sm">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-sky-700">Recipt 1no</p>
+          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
             ₹{liveChips.recipt1no.toLocaleString('en-IN')}
           </p>
-          <p className="text-[10px] text-sky-400/70 mt-1">Formula: AI53 = SUM(AI2:AI50)</p>
+          <p className="text-[10px] text-sky-600/80 mt-1 font-medium">Formula: AI53 = SUM(AI2:AI50)</p>
         </div>
 
         {/* 3. Csah 2no (AJ53) */}
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-950/20 p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Csah 2no</p>
-          <p className="text-xl font-extrabold text-white mt-0.5 font-mono">
+        <div className="rounded-2xl border border-amber-200 bg-white p-3.5 shadow-sm">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Csah 2no</p>
+          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
             ₹{liveChips.csah2no.toLocaleString('en-IN')}
           </p>
-          <p className="text-[10px] text-amber-400/70 mt-1">Formula: AJ53 = SUM(AJ2:AJ50)</p>
+          <p className="text-[10px] text-amber-600/80 mt-1 font-medium">Formula: AJ53 = SUM(AJ2:AJ50)</p>
         </div>
 
         {/* 4. Recipt 2no (AK53) */}
-        <div className="rounded-2xl border border-purple-500/20 bg-purple-950/20 p-3.5 shadow-sm">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-purple-400">Recipt 2no</p>
-          <p className="text-xl font-extrabold text-white mt-0.5 font-mono">
+        <div className="rounded-2xl border border-purple-200 bg-white p-3.5 shadow-sm">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-purple-700">Recipt 2no</p>
+          <p className="text-xl font-extrabold text-slate-900 mt-0.5 font-mono">
             ₹{liveChips.recipt2no.toLocaleString('en-IN')}
           </p>
-          <p className="text-[10px] text-purple-400/70 mt-1">Formula: AK53 = SUM(AK2:AK50)</p>
+          <p className="text-[10px] text-purple-600/80 mt-1 font-medium">Formula: AK53 = SUM(AK2:AK50)</p>
         </div>
       </div>
 
       {/* Day Tabs Bar (Numeric sheets 1..31 + non-numeric sheets like Reminder) */}
       {sortedSheetNames.length > 0 ? (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-800">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 shrink-0 mr-1.5 flex items-center gap-1">
-            <Layers className="h-3.5 w-3.5 text-indigo-400" />
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-300">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 shrink-0 mr-1.5 flex items-center gap-1">
+            <Layers className="h-3.5 w-3.5 text-indigo-600" />
             Sheets:
           </span>
           {sortedSheetNames.map((name) => {
@@ -702,8 +709,8 @@ export default function HisabXLScreen() {
                 onClick={() => setActiveSheetName(name)}
                 className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-bold transition shadow-sm ${
                   isSelected
-                    ? 'bg-indigo-600 text-white shadow-indigo-600/30'
-                    : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-indigo-600 text-white shadow-indigo-600/20'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
                 {isNumeric ? `Day ${name}` : name}
@@ -712,54 +719,50 @@ export default function HisabXLScreen() {
           })}
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-8 text-center text-xs text-slate-400">
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">
           Koi mahina ya sheets uplabdh nahi hain. Upar diye gaye button se Excel file upload karein.
         </div>
       )}
 
       {/* Excel Sheet Table View */}
       {loadingSheet ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-12 text-center text-slate-400">
-          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent"></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500 shadow-sm">
+          <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent"></div>
           <p className="text-xs font-semibold">Loading sheet "{activeSheetName}"...</p>
         </div>
       ) : liveGrid.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-12 text-center text-slate-500 text-xs">
+        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-500 text-xs shadow-sm">
           Sheet data load nahi ho saka ya khali hai.
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl overflow-hidden flex flex-col">
+        <div className="rounded-2xl border border-slate-300 bg-white shadow-md overflow-hidden flex flex-col">
           {/* Table Header Bar */}
-          <div className="bg-slate-900/90 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between text-xs">
+          <div className="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex items-center justify-between text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-white">Sheet: {activeSheetName}</span>
-              <span className="text-[10px] text-slate-400">
+              <span className="font-bold text-slate-800">Sheet: {activeSheetName}</span>
+              <span className="text-[10px] text-slate-500">
                 (53 rows × {visibleColCount} visible cols | Col AD..AK helper columns hidden)
               </span>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-slate-400">
+            <div className="flex items-center gap-3 text-[11px] text-slate-600">
               <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-sky-950 border border-sky-700"></span>
-                <span>Auto-computed (Read-only)</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-slate-950 border border-slate-700"></span>
+                <span className="h-3 w-3 rounded bg-emerald-50 border border-emerald-400"></span>
                 <span>Editable (Tap to edit)</span>
               </span>
             </div>
           </div>
 
           {/* Excel Grid with Sticky Headers and Horizontal/Vertical Scroll */}
-          <div className="overflow-auto max-h-[620px] scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-900">
+          <div className="overflow-auto max-h-[620px] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
             <table
-              className="w-max border-collapse text-[12px] select-text"
+              className="w-max border-collapse text-[12px] select-text bg-white"
               style={{ minWidth: '100%' }}
             >
               {/* Sticky Column Headers: Row 0 / Column Letters A..AC */}
-              <thead className="sticky top-0 z-20 bg-slate-950 shadow">
+              <thead className="sticky top-0 z-20 bg-gray-100 shadow-sm">
                 <tr>
                   {/* Row Number Header Cell */}
-                  <th className="sticky left-0 z-30 bg-slate-950 border border-slate-700 px-2.5 py-1 text-center font-mono text-[10px] text-slate-400 w-12 shrink-0">
+                  <th className="sticky left-0 z-30 bg-gray-100 border border-zinc-300 px-2.5 py-1 text-center font-mono text-[10px] text-gray-600 w-12 shrink-0">
                     #
                   </th>
                   {Array.from({ length: visibleColCount }).map((_, c) => {
@@ -769,7 +772,7 @@ export default function HisabXLScreen() {
                       <th
                         key={c}
                         style={{ width: `${widthPx}px`, minWidth: `${widthPx}px` }}
-                        className="border border-slate-700 bg-slate-950 px-2 py-1.5 text-center font-mono text-[11px] font-bold text-slate-300 uppercase tracking-wider"
+                        className="border border-zinc-300 bg-gray-100 px-2 py-1.5 text-center font-mono text-[11px] font-bold text-gray-700 uppercase tracking-wider"
                       >
                         {colToLetter(c)}
                       </th>
@@ -781,9 +784,9 @@ export default function HisabXLScreen() {
               {/* Table Body (53 rows) */}
               <tbody>
                 {liveGrid.map((row, r) => (
-                  <tr key={r} className="hover:bg-slate-800/30 transition-colors">
+                  <tr key={r} className="hover:opacity-95 transition-opacity">
                     {/* Row Index Sticky Column (1-based) */}
-                    <td className="sticky left-0 z-10 bg-slate-950/95 border border-slate-700 px-2 py-1 text-center font-mono text-[10px] text-slate-500 font-bold shrink-0">
+                    <td className="sticky left-0 z-10 bg-gray-100 border border-zinc-300 px-2 py-1 text-center font-mono text-[10px] text-gray-600 font-bold shrink-0">
                       {r + 1}
                     </td>
 
@@ -792,25 +795,45 @@ export default function HisabXLScreen() {
                       const mergeKey = `${r},${c}`;
                       const mergeInfo = mergeMap.get(mergeKey);
 
-                      // If cell is covered by another merged cell, skip rendering
                       if (mergeInfo?.isCovered) {
                         return null;
                       }
 
-                      // Check if computed cell
                       const computed = isComputedCell(r, c);
-                      const isNum = isNumericValue(val);
 
-                      // Format value for display
+                      const styleIdx = currentSheet?.styleIndex?.[r]?.[c];
+                      const styleObj: any = (styleIdx !== null && styleIdx !== undefined && currentSheet?.styleTable)
+                        ? currentSheet.styleTable[styleIdx]
+                        : null;
+
+                      const bgColor = colorToCss(styleObj?.fill?.fgColor) ?? '#ffffff';
+                      const fontColor = colorToCss(styleObj?.font?.color) ?? '#1f2937';
+                      const fontWeight = styleObj?.font?.bold ? 'bold' : 'normal';
+                      const fontStyle = styleObj?.font?.italic ? 'italic' : 'normal';
+                      const fontSize = styleObj?.font?.sz ? `${Math.round(styleObj.font.sz * 1.33)}px` : undefined;
+                      const textAlign = styleObj?.alignment?.horizontal ?? (isNumericValue(val) ? 'right' : 'left');
+                      const whiteSpace = styleObj?.alignment?.wrapText ? 'normal' : 'nowrap';
+
+                      const borderTop = styleObj?.border?.top ? `1px solid ${colorToCss(styleObj.border.top.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
+                      const borderBottom = styleObj?.border?.bottom ? `1px solid ${colorToCss(styleObj.border.bottom.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
+                      const borderLeft = styleObj?.border?.left ? `1px solid ${colorToCss(styleObj.border.left.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
+                      const borderRight = styleObj?.border?.right ? `1px solid ${colorToCss(styleObj.border.right.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
+
                       let displayVal = val;
                       if (val === null || val === undefined) {
                         displayVal = '';
                       } else if (typeof val === 'number') {
-                        // Display clean numbers
-                        displayVal = Number.isInteger(val) ? val.toLocaleString('en-IN') : val.toFixed(2);
+                        if (styleObj?.numFmt && typeof styleObj.numFmt === 'string') {
+                          try {
+                            displayVal = XLSX.SSF.format(styleObj.numFmt, val);
+                          } catch {
+                            displayVal = Number.isInteger(val) ? val.toLocaleString('en-IN') : val.toFixed(2);
+                          }
+                        } else {
+                          displayVal = Number.isInteger(val) ? val.toLocaleString('en-IN') : val.toFixed(2);
+                        }
                       }
 
-                      // Cap colSpan to visible columns
                       let effectiveColSpan = mergeInfo?.colSpan;
                       if (effectiveColSpan && c + effectiveColSpan > visibleColCount) {
                         effectiveColSpan = visibleColCount - c;
@@ -823,12 +846,21 @@ export default function HisabXLScreen() {
                           colSpan={effectiveColSpan && effectiveColSpan > 1 ? effectiveColSpan : undefined}
                           onClick={() => handleCellClick(r, c)}
                           title={`${cellToA1(r, c)}: ${val ?? ''}${computed ? ' (Auto-computed)' : ' (Click to edit)'}`}
-                          className={`border border-slate-700 px-2 py-1 text-[12px] transition-colors cursor-pointer select-text truncate ${
-                            computed
-                              ? 'bg-sky-950/30 text-sky-200 font-semibold border-sky-800/50'
-                              : 'text-slate-200 hover:bg-indigo-600/10'
-                          } ${isNum ? 'text-right font-mono' : 'text-left'}`}
-                          style={{ maxWidth: '280px' }}
+                          className="px-2 py-1 text-[12px] cursor-pointer select-text truncate hover:opacity-90 transition-opacity"
+                          style={{
+                            backgroundColor: bgColor,
+                            color: fontColor,
+                            fontWeight,
+                            fontStyle,
+                            fontSize,
+                            textAlign: textAlign as any,
+                            whiteSpace: whiteSpace as any,
+                            borderTop,
+                            borderBottom,
+                            borderLeft,
+                            borderRight,
+                            maxWidth: '280px'
+                          }}
                         >
                           {String(displayVal)}
                         </td>
@@ -844,35 +876,35 @@ export default function HisabXLScreen() {
 
       {/* Cell Inline / Popover Editor Modal */}
       {editingCell && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <Edit3 className="h-4 w-4 text-indigo-400" />
-                <h3 className="text-sm font-bold text-white">
-                  Edit Cell: <span className="font-mono text-indigo-400">{cellToA1(editingCell.row, editingCell.col)}</span>
+                <Edit3 className="h-4 w-4 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-800">
+                  Edit Cell: <span className="font-mono text-indigo-600">{cellToA1(editingCell.row, editingCell.col)}</span>
                 </h3>
               </div>
               <button
                 onClick={() => setEditingCell(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-700"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-slate-500">
               Row {editingCell.row + 1}, Column {colToLetter(editingCell.col)}
             </div>
 
             {/* Special Dropdown for Column F (c=5): Cash / Receipt */}
             {editingCell.col === 5 ? (
               <div>
-                <label className="text-xs font-semibold text-slate-300">Payment Type (Col F)</label>
+                <label className="text-xs font-semibold text-slate-700">Payment Type (Col F)</label>
                 <select
                   value={editingCell.value}
                   onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs font-bold text-white focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">(Blank)</option>
                   <option value="Cash">Cash</option>
@@ -882,13 +914,13 @@ export default function HisabXLScreen() {
             ) : editingCell.col === 4 || editingCell.col === 12 ? (
               /* Special Dropdown for Column E (c=4) or Column M (c=12): 1 / 2 */
               <div>
-                <label className="text-xs font-semibold text-slate-300">
+                <label className="text-xs font-semibold text-slate-700">
                   Number Category (Col {colToLetter(editingCell.col)})
                 </label>
                 <select
                   value={editingCell.value}
                   onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs font-bold text-white focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">(Blank)</option>
                   <option value="1">1</option>
@@ -898,11 +930,11 @@ export default function HisabXLScreen() {
             ) : editingCell.col === 16 ? (
               /* Special Dropdown for Column Q (c=16): Transport / Courior / In Hand / Other Party / Riksha */
               <div>
-                <label className="text-xs font-semibold text-slate-300">Delivery / Mode (Col Q)</label>
+                <label className="text-xs font-semibold text-slate-700">Delivery / Mode (Col Q)</label>
                 <select
                   value={editingCell.value}
                   onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs font-bold text-white focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
                 >
                   <option value="">(Blank)</option>
                   <option value="Transport">Transport</option>
@@ -915,7 +947,7 @@ export default function HisabXLScreen() {
             ) : (
               /* Standard Input */
               <div>
-                <label className="text-xs font-semibold text-slate-300">Cell Value</label>
+                <label className="text-xs font-semibold text-slate-700">Cell Value</label>
                 <input
                   type="text"
                   autoFocus
@@ -925,17 +957,17 @@ export default function HisabXLScreen() {
                     if (e.key === 'Enter') handleSaveCell();
                     if (e.key === 'Escape') setEditingCell(null);
                   }}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none"
                 />
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setEditingCell(null)}
                 disabled={savingCell}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700 transition"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
               >
                 Cancel
               </button>
@@ -943,7 +975,7 @@ export default function HisabXLScreen() {
                 type="button"
                 onClick={handleSaveCell}
                 disabled={savingCell}
-                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow hover:bg-emerald-500 transition disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow hover:bg-emerald-700 transition disabled:opacity-50"
               >
                 <Save className="h-3.5 w-3.5" />
                 <span>{savingCell ? 'Saving...' : 'Save Cell'}</span>
@@ -955,17 +987,17 @@ export default function HisabXLScreen() {
 
       {/* Upload Modal ("⬆ XL Upload Karein") */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <Upload className="h-5 w-5 text-indigo-400" />
-                <h3 className="text-sm font-bold text-white">Upload Hisab Excel File</h3>
+                <Upload className="h-5 w-5 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-800">Upload Hisab Excel File</h3>
               </div>
               <button
                 onClick={() => !uploading && setShowUploadModal(false)}
                 disabled={uploading}
-                className="text-slate-400 hover:text-white disabled:opacity-50"
+                className="text-slate-400 hover:text-slate-700 disabled:opacity-50"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -974,12 +1006,12 @@ export default function HisabXLScreen() {
             <div className="space-y-4 text-xs">
               {/* Month Selection */}
               <div>
-                <label className="font-semibold text-slate-300">Select Month</label>
+                <label className="font-semibold text-slate-700">Select Month</label>
                 <select
                   value={uploadMonthNum}
                   onChange={(e) => setUploadMonthNum(Number(e.target.value))}
                   disabled={uploading}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs font-bold text-white focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
                 >
                   {MONTH_NAMES.map((name, index) => (
                     <option key={name} value={index + 1}>
@@ -991,19 +1023,19 @@ export default function HisabXLScreen() {
 
               {/* Year Selection */}
               <div>
-                <label className="font-semibold text-slate-300">Select Year</label>
+                <label className="font-semibold text-slate-700">Select Year</label>
                 <input
                   type="number"
                   value={uploadYear}
                   onChange={(e) => setUploadYear(Number(e.target.value))}
                   disabled={uploading}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none"
                 />
               </div>
 
               {/* File Input */}
               <div>
-                <label className="font-semibold text-slate-300">Excel File (.xlsx, .xls)</label>
+                <label className="font-semibold text-slate-700">Excel File (.xlsx, .xls)</label>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1015,10 +1047,10 @@ export default function HisabXLScreen() {
                       setSelectedFile(files[0]);
                     }
                   }}
-                  className="mt-1.5 w-full text-xs text-slate-400 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-indigo-500"
+                  className="mt-1.5 w-full text-xs text-slate-500 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-indigo-700"
                 />
                 {selectedFile && (
-                  <p className="mt-1 text-[11px] text-emerald-400 font-medium">
+                  <p className="mt-1 text-[11px] text-emerald-600 font-medium">
                     ✓ Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
                   </p>
                 )}
@@ -1026,19 +1058,19 @@ export default function HisabXLScreen() {
 
               {/* Upload Progress Status */}
               {uploading && (
-                <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs font-semibold text-indigo-300 flex items-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent shrink-0"></div>
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs font-semibold text-indigo-800 flex items-center gap-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent shrink-0"></div>
                   <span>{uploadProgress || 'Uploading and parsing sheets...'}</span>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setShowUploadModal(false)}
                 disabled={uploading}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700 transition disabled:opacity-50"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1046,7 +1078,7 @@ export default function HisabXLScreen() {
                 type="button"
                 onClick={processAndUploadFile}
                 disabled={uploading || !selectedFile}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition disabled:opacity-50"
               >
                 <Upload className="h-3.5 w-3.5" />
                 <span>{uploading ? 'Processing...' : 'Upload & Process'}</span>

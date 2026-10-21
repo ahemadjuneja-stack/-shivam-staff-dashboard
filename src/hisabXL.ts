@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import {
   Firestore,
   doc,
@@ -17,6 +17,8 @@ export interface SheetData {
   grid: CellValue[][];
   merges: string[]; // e.g. ["A1:B1"]
   cols: (number | null)[]; // column widths in wch
+  styleTable?: Record<string, unknown>[];   // unique style objects for this sheet
+  styleIndex?: (number | null)[][];         // 53x37 indexes into styleTable (null = no style)
   updatedAt?: unknown;
 }
 
@@ -46,6 +48,143 @@ export interface MismatchItem {
 export interface VerificationResult {
   checked: number;
   mismatches: MismatchItem[];
+}
+
+const THEME_RGB = ['FFFFFF', '000000', 'E7E6E6', '44546A', '4472C4', 'ED7D31', 'A5A5A5', 'FFC000', '5B9BD5', '70AD47'];
+
+export function colorToCss(c: any): string | null {
+  if (!c || typeof c !== 'object') return null;
+
+  // 1) Direct RGB / ARGB
+  if (c.rgb && typeof c.rgb === 'string') {
+    const raw = c.rgb.trim();
+    if (raw.length >= 6) {
+      const hex = raw.slice(-6).toUpperCase();
+      return `#${hex}`;
+    }
+  }
+
+  // 2) Theme index + tint
+  if (typeof c.theme === 'number') {
+    const idx = Math.max(0, Math.min(9, Math.floor(c.theme)));
+    const baseHex = THEME_RGB[idx] || 'FFFFFF';
+    const r = parseInt(baseHex.substring(0, 2), 16);
+    const g = parseInt(baseHex.substring(2, 4), 16);
+    const b = parseInt(baseHex.substring(4, 6), 16);
+
+    const tint = typeof c.tint === 'number' ? c.tint : 0;
+    let finalR = r;
+    let finalG = g;
+    let finalB = b;
+
+    if (tint > 0) {
+      finalR = r + (255 - r) * tint;
+      finalG = g + (255 - g) * tint;
+      finalB = b + (255 - b) * tint;
+    } else if (tint < 0) {
+      finalR = r * (1 + tint);
+      finalG = g * (1 + tint);
+      finalB = b * (1 + tint);
+    }
+
+    const clampHex = (val: number) =>
+      Math.max(0, Math.min(255, Math.round(val))).toString(16).padStart(2, '0').toUpperCase();
+    return `#${clampHex(finalR)}${clampHex(finalG)}${clampHex(finalB)}`;
+  }
+
+  return null;
+}
+
+export function extractStyles(
+  ws: any,
+  rows: number,
+  cols: number
+): { styleTable: Record<string, unknown>[]; styleIndex: (number | null)[][] } {
+  const styleTable: Record<string, unknown>[] = [];
+  const styleMap = new Map<string, number>();
+  const styleIndex: (number | null)[][] = [];
+
+  for (let r = 0; r < rows; r++) {
+    const rowIdxs: (number | null)[] = [];
+    for (let c = 0; c < cols; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = ws[addr];
+      const s = cell?.s;
+      const z = cell?.z || s?.numFmt;
+
+      if (!s && !z) {
+        rowIdxs.push(null);
+        continue;
+      }
+
+      const compact: Record<string, any> = {};
+
+      if (s) {
+        if (s.fill) {
+          const fillObj: Record<string, any> = {};
+          if (s.fill.patternType) fillObj.patternType = s.fill.patternType;
+          if (s.fill.fgColor) fillObj.fgColor = s.fill.fgColor;
+          if (s.fill.bgColor) fillObj.bgColor = s.fill.bgColor;
+          if (Object.keys(fillObj).length > 0) compact.fill = fillObj;
+        }
+
+        if (s.font) {
+          const fontObj: Record<string, any> = {};
+          if (s.font.bold) fontObj.bold = true;
+          if (s.font.italic) fontObj.italic = true;
+          if (s.font.underline) fontObj.underline = true;
+          if (s.font.sz) fontObj.sz = s.font.sz;
+          if (s.font.name) fontObj.name = s.font.name;
+          if (s.font.color) fontObj.color = s.font.color;
+          if (Object.keys(fontObj).length > 0) compact.font = fontObj;
+        }
+
+        if (s.alignment) {
+          const alignObj: Record<string, any> = {};
+          if (s.alignment.horizontal) alignObj.horizontal = s.alignment.horizontal;
+          if (s.alignment.vertical) alignObj.vertical = s.alignment.vertical;
+          if (s.alignment.wrapText) alignObj.wrapText = true;
+          if (Object.keys(alignObj).length > 0) compact.alignment = alignObj;
+        }
+
+        if (s.border) {
+          const borderObj: Record<string, any> = {};
+          ['top', 'bottom', 'left', 'right'].forEach((side) => {
+            if (s.border[side]) {
+              borderObj[side] = {
+                style: s.border[side].style,
+                color: s.border[side].color
+              };
+            }
+          });
+          if (Object.keys(borderObj).length > 0) compact.border = borderObj;
+        }
+      }
+
+      if (z && typeof z === 'string') {
+        compact.numFmt = z;
+      } else if (s?.numFmt && typeof s.numFmt === 'string') {
+        compact.numFmt = s.numFmt;
+      }
+
+      if (Object.keys(compact).length === 0) {
+        rowIdxs.push(null);
+        continue;
+      }
+
+      const json = JSON.stringify(compact);
+      let idx = styleMap.get(json);
+      if (idx === undefined) {
+        idx = styleTable.length;
+        styleTable.push(compact);
+        styleMap.set(json, idx);
+      }
+      rowIdxs.push(idx);
+    }
+    styleIndex.push(rowIdxs);
+  }
+
+  return { styleTable, styleIndex };
 }
 
 // Convert column index 0-based to letter (e.g. 0 -> A, 26 -> AA, 36 -> AK)
@@ -393,26 +532,35 @@ export async function saveSheetToFirestore(
   sheet: SheetData
 ): Promise<void> {
   const sheetDocRef = doc(db, 'hisab', monthId, 'sheets', sheet.name);
+  const baseDoc: Record<string, any> = {
+    name: sheet.name,
+    grid: sheet.grid,
+    merges: sheet.merges,
+    cols: sheet.cols,
+    updatedAt: serverTimestamp()
+  };
+  if (sheet.styleTable) baseDoc.styleTable = sheet.styleTable;
+  if (sheet.styleIndex) baseDoc.styleIndex = sheet.styleIndex;
+
   try {
-    await setDoc(sheetDocRef, {
-      name: sheet.name,
-      grid: sheet.grid,
-      merges: sheet.merges,
-      cols: sheet.cols,
-      updatedAt: serverTimestamp()
-    });
+    await setDoc(sheetDocRef, baseDoc);
   } catch (err: unknown) {
     // Fall back to rows stored as JSON strings if nested array is rejected
     const errorMsg = String((err as Error)?.message || '');
     if (errorMsg.includes('nested') || errorMsg.includes('array')) {
       const rowsJson = sheet.grid.map((r) => JSON.stringify(r));
-      await setDoc(sheetDocRef, {
+      const fallbackDoc: Record<string, any> = {
         name: sheet.name,
         rowsJson,
         merges: sheet.merges,
         cols: sheet.cols,
         updatedAt: serverTimestamp()
-      });
+      };
+      if (sheet.styleTable) fallbackDoc.styleTable = sheet.styleTable;
+      if (sheet.styleIndex) {
+        fallbackDoc.styleIndexJson = sheet.styleIndex.map((r) => JSON.stringify(r));
+      }
+      await setDoc(sheetDocRef, fallbackDoc);
     } else {
       throw err;
     }
@@ -442,11 +590,29 @@ export async function loadSheetFromFirestore(
     grid = data.rowsJson.map((r: string) => JSON.parse(r));
   }
 
+  let styleTable: Record<string, unknown>[] | undefined;
+  if (Array.isArray(data.styleTable)) {
+    styleTable = data.styleTable;
+  }
+
+  let styleIndex: (number | null)[][] | undefined;
+  if (Array.isArray(data.styleIndex)) {
+    if (Array.isArray(data.styleIndex[0])) {
+      styleIndex = data.styleIndex;
+    } else if (typeof data.styleIndex[0] === 'string') {
+      styleIndex = data.styleIndex.map((r: string) => JSON.parse(r));
+    }
+  } else if (Array.isArray(data.styleIndexJson)) {
+    styleIndex = data.styleIndexJson.map((r: string) => JSON.parse(r));
+  }
+
   return {
     name: data.name || sheetName,
     grid: normalizeGrid(grid, 53, 37),
     merges: Array.isArray(data.merges) ? data.merges : [],
     cols: Array.isArray(data.cols) ? data.cols : [],
+    styleTable,
+    styleIndex,
     updatedAt: data.updatedAt
   };
 }
@@ -595,8 +761,27 @@ export function exportMonthWorkbook(
       setFormulaCell(15, 2, 'AG1');
     }
 
+    if (sheet.styleTable && sheet.styleIndex) {
+      const sIndex = sheet.styleIndex;
+      const sTable = sheet.styleTable;
+      for (let r = 0; r < sIndex.length; r++) {
+        const rowData = sIndex[r];
+        if (!rowData) continue;
+        for (let c = 0; c < rowData.length; c++) {
+          const idx = rowData[c];
+          if (idx !== null && idx !== undefined && sTable[idx]) {
+            const addr = XLSX.utils.encode_cell({ r, c });
+            if (!ws[addr]) {
+              ws[addr] = { t: 'z', v: '' };
+            }
+            ws[addr].s = sTable[idx];
+          }
+        }
+      }
+    }
+
     if (sheet.merges && sheet.merges.length > 0) {
-      const decodedMerges: XLSX.Range[] = [];
+      const decodedMerges: any[] = [];
       for (const m of sheet.merges) {
         try {
           decodedMerges.push(XLSX.utils.decode_range(m));
