@@ -184,8 +184,9 @@ export default function HisabXLScreen() {
   useEffect(() => {
     if (!selectedMonthId || !activeSheetName) return;
 
-    // If already in cache, no need to fetch
-    if (sheetsCache[activeSheetName]) return;
+    // Cache key is MONTH-SCOPED: same sheet name in different months must never collide
+    const cacheKey = `${selectedMonthId}::${activeSheetName}`;
+    if (sheetsCache[cacheKey]) return;
 
     let isMounted = true;
     setLoadingSheet(true);
@@ -199,7 +200,7 @@ export default function HisabXLScreen() {
           const processed = isNumericSheet ? runFormulaEngine(sheetData.grid).grid : sheetData.grid;
           setSheetsCache((prev) => ({
             ...prev,
-            [activeSheetName]: {
+            [cacheKey]: {
               ...sheetData,
               grid: processed
             }
@@ -226,10 +227,10 @@ export default function HisabXLScreen() {
     };
   }, [selectedMonthId, activeSheetName, sheetsCache]);
 
-  // Active sheet data
+  // Active sheet data (month-scoped cache key)
   const currentSheet = useMemo(() => {
-    return sheetsCache[activeSheetName] || null;
-  }, [sheetsCache, activeSheetName]);
+    return sheetsCache[`${selectedMonthId}::${activeSheetName}`] || null;
+  }, [sheetsCache, selectedMonthId, activeSheetName]);
 
   // Compute live formula chips for current sheet
   const { liveGrid, liveChips } = useMemo<{ liveGrid: CellValue[][]; liveChips: ComputedChips }>(() => {
@@ -469,10 +470,10 @@ export default function HisabXLScreen() {
 
     try {
       await saveSheetToFirestore(db, selectedMonthId, updatedSheet);
-      // Update local state
+      // Update local state (month-scoped cache key)
       setSheetsCache((prev) => ({
         ...prev,
-        [activeSheetName]: updatedSheet
+        [`${selectedMonthId}::${activeSheetName}`]: updatedSheet
       }));
       setEditingCell(null);
       showToast('✓ Save ho gaya', 'success');
@@ -499,7 +500,14 @@ export default function HisabXLScreen() {
     showToast('Preparing Excel workbook download...', 'info');
 
     try {
-      const allSheets: { [sheetName: string]: SheetData } = { ...sheetsCache };
+      // Only reuse cache entries belonging to THIS month (keys are "<monthId>::<sheet>")
+      const allSheets: { [sheetName: string]: SheetData } = {};
+      const monthPrefix = `${selectedMonthId}::`;
+      for (const [k, v] of Object.entries(sheetsCache)) {
+        if (k.startsWith(monthPrefix)) {
+          allSheets[k.slice(monthPrefix.length)] = v;
+        }
+      }
 
       // Ensure all sheets are loaded
       for (const name of currentMonth.sheetNames) {
