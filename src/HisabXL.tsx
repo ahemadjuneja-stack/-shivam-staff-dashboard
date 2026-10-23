@@ -12,8 +12,6 @@ import {
   X,
   Calendar,
   Layers,
-  Edit3,
-  Save,
   Calculator,
   ChevronRight,
   CheckCircle2,
@@ -65,6 +63,7 @@ interface EditingCellState {
   row: number; // 0-based
   col: number; // 0-based
   value: string;
+  origValue: string; // value at edit start (no-change -> close without save)
 }
 
 export interface HisabCheckReport {
@@ -438,15 +437,24 @@ export default function HisabXLScreen() {
     setEditingCell({
       row: r,
       col: c,
-      value: String(currentVal ?? '')
+      value: String(currentVal ?? ''),
+      origValue: String(currentVal ?? '')
     });
   };
 
-  const handleSaveCell = async () => {
-    if (!editingCell || !currentSheet || !selectedMonthId) return;
+  const handleSaveCell = async (valueOverride?: string) => {
+    if (!editingCell || !currentSheet || !selectedMonthId || savingCell) return;
+
+    const { row, col } = editingCell;
+    const value = valueOverride !== undefined ? valueOverride : editingCell.value;
+
+    // No change -> close editor without saving (Excel behaviour)
+    if (valueOverride === undefined && value === editingCell.origValue) {
+      setEditingCell((prev) => (prev && prev.row === row && prev.col === col ? null : prev));
+      return;
+    }
 
     setSavingCell(true);
-    const { row, col, value } = editingCell;
 
     // Clone grid
     const updatedGrid = currentSheet.grid.map((r) => [...r]);
@@ -475,7 +483,7 @@ export default function HisabXLScreen() {
         ...prev,
         [`${selectedMonthId}::${activeSheetName}`]: updatedSheet
       }));
-      setEditingCell(null);
+      setEditingCell((prev) => (prev && prev.row === row && prev.col === col ? null : prev));
       showToast('✓ Save ho gaya', 'success');
     } catch (err: unknown) {
       console.error('Cell save error:', err);
@@ -897,7 +905,41 @@ export default function HisabXLScreen() {
                             borderRight
                           }}
                         >
-                          {String(displayVal)}
+                          {editingCell && editingCell.row === r && editingCell.col === c ? (
+                            editingCell.col === 5 || editingCell.col === 4 || editingCell.col === 12 || editingCell.col === 16 ? (
+                              <select
+                                autoFocus
+                                value={editingCell.value}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => handleSaveCell(e.target.value)}
+                                onBlur={() => handleSaveCell()}
+                                className="w-full border-0 outline-none bg-transparent p-0 m-0 cursor-pointer"
+                                style={{ fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', fontStyle: 'inherit', color: 'inherit', backgroundColor: 'transparent', textAlign: textAlign as any }}
+                              >
+                                <option value="">(Blank)</option>
+                                {(editingCell.col === 5 ? ['Cash', 'Receipt'] : editingCell.col === 16 ? ['Transport', 'Courior', 'In Hand', 'Other Party', 'Riksha'] : ['1', '2']).map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                autoFocus
+                                value={editingCell.value}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveCell();
+                                  if (e.key === 'Escape') setEditingCell(null);
+                                }}
+                                onBlur={() => handleSaveCell()}
+                                className="w-full border-0 outline-none bg-transparent p-0 m-0"
+                                style={{ fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', fontStyle: 'inherit', color: 'inherit', backgroundColor: 'transparent', textAlign: textAlign as any }}
+                              />
+                            )
+                          ) : (
+                            String(displayVal)
+                          )}
                         </td>
                       );
                     })}
@@ -905,117 +947,6 @@ export default function HisabXLScreen() {
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {/* Cell Inline / Popover Editor Modal */}
-      {editingCell && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Edit3 className="h-4 w-4 text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-800">
-                  Edit Cell: <span className="font-mono text-indigo-600">{cellToA1(editingCell.row, editingCell.col)}</span>
-                </h3>
-              </div>
-              <button
-                onClick={() => setEditingCell(null)}
-                className="text-slate-400 hover:text-slate-700"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-500">
-              Row {editingCell.row + 1}, Column {colToLetter(editingCell.col)}
-            </div>
-
-            {/* Special Dropdown for Column F (c=5): Cash / Receipt */}
-            {editingCell.col === 5 ? (
-              <div>
-                <label className="text-xs font-semibold text-slate-700">Payment Type (Col F)</label>
-                <select
-                  value={editingCell.value}
-                  onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
-                >
-                  <option value="">(Blank)</option>
-                  <option value="Cash">Cash</option>
-                  <option value="Receipt">Receipt</option>
-                </select>
-              </div>
-            ) : editingCell.col === 4 || editingCell.col === 12 ? (
-              /* Special Dropdown for Column E (c=4) or Column M (c=12): 1 / 2 */
-              <div>
-                <label className="text-xs font-semibold text-slate-700">
-                  Number Category (Col {colToLetter(editingCell.col)})
-                </label>
-                <select
-                  value={editingCell.value}
-                  onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
-                >
-                  <option value="">(Blank)</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                </select>
-              </div>
-            ) : editingCell.col === 16 ? (
-              /* Special Dropdown for Column Q (c=16): Transport / Courior / In Hand / Other Party / Riksha */
-              <div>
-                <label className="text-xs font-semibold text-slate-700">Delivery / Mode (Col Q)</label>
-                <select
-                  value={editingCell.value}
-                  onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
-                >
-                  <option value="">(Blank)</option>
-                  <option value="Transport">Transport</option>
-                  <option value="Courior">Courior</option>
-                  <option value="In Hand">In Hand</option>
-                  <option value="Other Party">Other Party</option>
-                  <option value="Riksha">Riksha</option>
-                </select>
-              </div>
-            ) : (
-              /* Standard Input */
-              <div>
-                <label className="text-xs font-semibold text-slate-700">Cell Value</label>
-                <input
-                  type="text"
-                  autoFocus
-                  value={editingCell.value}
-                  onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveCell();
-                    if (e.key === 'Escape') setEditingCell(null);
-                  }}
-                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setEditingCell(null)}
-                disabled={savingCell}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveCell}
-                disabled={savingCell}
-                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow hover:bg-emerald-700 transition disabled:opacity-50"
-              >
-                <Save className="h-3.5 w-3.5" />
-                <span>{savingCell ? 'Saving...' : 'Save Cell'}</span>
-              </button>
-            </div>
           </div>
         </div>
       )}
