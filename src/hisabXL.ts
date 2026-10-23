@@ -534,13 +534,13 @@ export async function saveSheetToFirestore(
   const sheetDocRef = doc(db, 'hisab', monthId, 'sheets', sheet.name);
   const baseDoc: Record<string, any> = {
     name: sheet.name,
-    grid: sheet.grid,
-    merges: sheet.merges,
-    cols: sheet.cols,
+    grid: deepClean(sheet.grid),
+    merges: deepClean(sheet.merges),
+    cols: deepClean(sheet.cols),
     updatedAt: serverTimestamp()
   };
-  if (sheet.styleTable) baseDoc.styleTable = sheet.styleTable;
-  if (sheet.styleIndex) baseDoc.styleIndex = sheet.styleIndex;
+  if (sheet.styleTable) baseDoc.styleTable = deepClean(sheet.styleTable);
+  if (sheet.styleIndex) baseDoc.styleIndex = deepClean(sheet.styleIndex);
 
   try {
     await setDoc(sheetDocRef, baseDoc);
@@ -552,13 +552,13 @@ export async function saveSheetToFirestore(
       const fallbackDoc: Record<string, any> = {
         name: sheet.name,
         rowsJson,
-        merges: sheet.merges,
-        cols: sheet.cols,
+        merges: deepClean(sheet.merges),
+        cols: deepClean(sheet.cols),
         updatedAt: serverTimestamp()
       };
-      if (sheet.styleTable) fallbackDoc.styleTable = sheet.styleTable;
+      if (sheet.styleTable) fallbackDoc.styleTable = deepClean(sheet.styleTable);
       if (sheet.styleIndex) {
-        fallbackDoc.styleIndexJson = sheet.styleIndex.map((r) => JSON.stringify(r));
+        fallbackDoc.styleIndexJson = deepClean(sheet.styleIndex.map((r) => JSON.stringify(r)));
       }
       await setDoc(sheetDocRef, fallbackDoc);
     } else {
@@ -626,7 +626,7 @@ export async function saveMonthWorkbookToFirestore(
   sheetNames: string[],
   sheets: { [sheetName: string]: SheetData },
   onProgress?: (saved: number, total: number) => void
-): Promise<void> {
+): Promise<{ saved: string[]; failed: string[] }> {
   // 1. Save month document
   const monthDocRef = doc(db, 'hisab', monthId);
   await setDoc(monthDocRef, {
@@ -638,20 +638,31 @@ export async function saveMonthWorkbookToFirestore(
     sheetNames
   });
 
-  // 2. Save each sheet in batches or individually to report live progress
+  // 2. Save each sheet — FAILURES CAPTURE (koi sheet fail ho to naam yaad rehta hai)
   const total = sheetNames.length;
-  let savedCount = 0;
+  const saved: string[] = [];
+  const failed: string[] = [];
 
-  for (const name of sheetNames) {
+  for (let i = 0; i < sheetNames.length; i++) {
+    const name = sheetNames[i];
     const sheet = sheets[name];
     if (sheet) {
-      await saveSheetToFirestore(db, monthId, sheet);
+      try {
+        await saveSheetToFirestore(db, monthId, sheet);
+        saved.push(name);
+      } catch (err: unknown) {
+        console.error(`[HISAB SAVE FAIL] sheet '${name}':`, err);
+        failed.push(name);
+      }
+    } else {
+      failed.push(name);
     }
-    savedCount++;
     if (onProgress) {
-      onProgress(savedCount, total);
+      onProgress(i + 1, total);
     }
   }
+
+  return { saved, failed };
 }
 
 // Export the workbook to an .xlsx file using SheetJS
@@ -801,3 +812,173 @@ export function exportMonthWorkbook(
 
   XLSX.writeFile(wb, `SHIVAM-HISAB-${monthLabel}.xlsx`);
 }
+
+// ==== deepClean: Firestore "undefined" field values + stray objects strip karta hai ====
+export function deepClean<T>(value: T): T {
+  if (value === null || value === undefined) return null as unknown as T;
+  if (Array.isArray(value)) return value.map((v) => deepClean(v)) as unknown as T;
+  if (typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value as object);
+    if (proto !== Object.prototype && proto !== null) return value; // Date/Timestamp/FieldValue sentinel untouched
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(value as Record<string, unknown>)) {
+      const v = (value as Record<string, unknown>)[k];
+      if (v === undefined) continue;
+      out[k] = deepClean(v);
+    }
+    return out as unknown as T;
+  }
+  return value;
+}
+
+// ==== CANONICAL HISAB XL STYLE DNA (generated from boss ka template CHART COPY.xlsx) ====
+export const CANON_TABLE: any[] = [
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF274E13' } }, font: { name: 'Comfortaa', sz: 15.0, color: { rgb: 'FFFFFFFF' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Lobster', sz: 20.0, color: { rgb: 'FFFF0000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Lobster', sz: 25.0, bold: true, color: { rgb: 'FF0000FF' } }, alignment: { horizontal: 'left' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF073763' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF073763' } }, font: { name: 'Comfortaa', sz: 10.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF073763' } }, font: { name: 'Comfortaa', color: { rgb: 'FF000000' } } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF783F04' } }, font: { name: 'Comfortaa', sz: 8.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF783F04' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF783F04' } }, font: { name: 'Comfortaa', sz: 10.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF783F04' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FF660000' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 8.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'left' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 11.0, bold: true, color: { rgb: 'FFEFEFEF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'center' } },
+  { font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FFEAD1DC' } }, numFmt: '0' },
+  { font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FFEAD1DC' } } },
+  { font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FFEAD1DC' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF38761D' } }, font: { name: 'Comfortaa', sz: 15.0, color: { rgb: 'FFFFFFFF' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF38761D' } }, font: { name: 'Comfortaa', sz: 11.0, bold: true, color: { rgb: 'FFFFFFFF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF38761D' } }, font: { name: 'Comfortaa', sz: 10.0, bold: true, color: { rgb: 'FFFFFFFF' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF274E13' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Comfortaa', sz: 10.0, color: { rgb: 'FFC27BA0' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Comfortaa', sz: 8.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Arial', sz: 11.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' }, numFmt: '0%' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Arial', sz: 11.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' }, numFmt: '0.0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFFFF' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF073763' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FF073763' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 10.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF7F6000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF783F04' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 8.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'left' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 10.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF000000' } }, numFmt: '0' },
+  { font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF000000' } } },
+  { font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEBEFF1' } }, font: { name: 'Comfortaa', sz: 10.0, color: { rgb: 'FFC27BA0' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEBEFF1' } }, font: { name: 'Comfortaa', sz: 8.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEBEFF1' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEBEFF1' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEBEFF1' } }, font: { name: 'Arial', sz: 11.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' }, numFmt: '0%' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEBEFF1' } }, font: { name: 'Arial', sz: 11.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' }, numFmt: '0.0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEBEFF1' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF0C343D' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFE06666' } }, font: { name: 'Comfortaa', sz: 15.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFE6B8AF' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFB6D7A8' } }, font: { name: 'Comfortaa', sz: 13.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFD9EAD3' } }, font: { name: 'Comfortaa', sz: 15.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFB6D7A8' } }, font: { name: 'Comfortaa', sz: 9.0, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFD9EAD3' } }, font: { name: 'Comfortaa', sz: 11.0, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFEAD1DC' } }, font: { name: 'Comfortaa', sz: 11.0, color: { rgb: 'FF4C1130' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF274E13' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFBF9000' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFBF9000' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFD966' } }, font: { name: 'Comfortaa', sz: 15.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFFFF2CC' } }, font: { name: 'Comfortaa', sz: 15.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFB6D7A8' } }, font: { name: 'Comfortaa', sz: 15.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFE6B8AF' } }, font: { name: 'Comfortaa', sz: 15.0, bold: true, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' }, numFmt: '0' },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFD9EAD3' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FFD9EAD3' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF000000' } }, alignment: { horizontal: 'center' } },
+  { font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FF7F6000' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FFEAD1DC' } }, alignment: { horizontal: 'right' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 12.0, bold: true, color: { rgb: 'FFEAD1DC' } }, alignment: { horizontal: 'center' } },
+  { fill: { patternType: 'solid', fgColor: { rgb: 'FF4C1130' } }, font: { name: 'Comfortaa', sz: 12.0, color: { rgb: 'FFEAD1DC' } }, alignment: { horizontal: 'center' } },
+];
+
+const CANON_INDEX_RLE =
+  "0x1,-1x1,1x1,2x1,-1x1,3x3,4x2,3x1,5x1,6x1,7x1,8x1,9x1,10x1,11x1,12x1,13x1,10x5,14x1,10x2,15x1,16" +
+  "x1,17x3,18x4;19x1,20x1,21x1,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x" +
+  "2,36x1,37x3,38x1,39x1,37x2,36x1,15x1,40x1,41x3,42x4;-1x3,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1" +
+  ",30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;50x1,51x2,22x1,23x1," +
+  "24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,4" +
+  "1x3,42x4;-1x3,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38" +
+  "x1,39x1,37x3,15x1,40x1,41x3,42x4;52x1,53x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x" +
+  "2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;-1x3,22x1,43x1,44x1,45x1,46x1,47x1" +
+  ",48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;54x1,55x2," +
+  "22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x1,56x1,37x1,38x1,3" +
+  "9x1,37x3,15x1,40x1,41x3,42x4;54x1,55x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33" +
+  "x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;22x1,57x2,22x1,23x1,24x1,25x1,26x1,27x" +
+  "1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;58x1,59x2" +
+  ",22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3," +
+  "15x1,40x1,41x3,42x4;60x1,61x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,3" +
+  "5x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;-1x3,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30" +
+  "x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;62x1,53x2,22x1,23x1,24x" +
+  "1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3" +
+  ",42x4;-1x3,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1," +
+  "39x1,37x3,15x1,40x1,41x3,42x4;50x1,63x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,3" +
+  "3x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;-1x3,22x1,43x1,44x1,45x1,46x1,47x1,48" +
+  "x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;64x1,65x2,22x" +
+  "1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1" +
+  ",40x1,41x3,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2," +
+  "36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,3" +
+  "0x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,40x1,41x3,42x4;64x1,65x2,22x1,43x1,44" +
+  "x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x" +
+  "1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1" +
+  ",37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1," +
+  "30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,2" +
+  "3x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41" +
+  "x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x" +
+  "2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1" +
+  ",29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2," +
+  "22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,1" +
+  "5x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34" +
+  "x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x" +
+  "1,48x1,49x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1" +
+  ",65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,32x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1," +
+  "37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,66x2,3" +
+  "3x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26" +
+  "x1,27x1,28x1,29x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x" +
+  "4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1" +
+  ",39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1," +
+  "66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,4" +
+  "5x1,46x1,47x1,48x1,49x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41" +
+  "x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x" +
+  "3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1" +
+  ",31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1," +
+  "24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,4" +
+  "0x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,66x2,33x1,34x1,35x2,36" +
+  "x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x" +
+  "1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1" +
+  ",43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1," +
+  "41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,66x2,33x1,34x1,3" +
+  "5x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48" +
+  "x1,49x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x" +
+  "2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3" +
+  ",15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,66x2,33x1," +
+  "34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,2" +
+  "7x1,28x1,29x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64" +
+  "x1,65x2,22x1,43x1,44x1,45x1,46x1,47x1,48x1,49x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x" +
+  "1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,66x2" +
+  ",33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;64x1,65x2,22x1,43x1,44x1,45x1," +
+  "46x1,47x1,48x1,49x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38x1,39x1,37x3,15x1,41x1,40x1,41x2,4" +
+  "2x4;64x1,65x2,22x1,23x1,24x1,25x1,26x1,27x1,28x1,29x1,30x1,31x1,66x2,33x1,34x1,35x2,36x1,37x3,38" +
+  "x1,39x1,37x3,15x1,41x1,40x1,41x2,42x4;67x28,68x1,69x8;67x28,68x1,69x8;67x28,68x1,69x8";
+
+export const CANON_INDEX: (number | null)[][] = CANON_INDEX_RLE.split(';').map((row) =>
+  row.split(',').flatMap((seg) => {
+    const [v, n] = seg.split('x').map(Number);
+    return Array.from({ length: n }, () => (v === -1 ? null : v));
+  })
+);
+
+export const CANON_COL_WIDTHS_PX: number[] = [123, 77, 93, 15, 34, 68, 192, 71, 41, 60, 71, 15, 34, 153, 62, 15, 71, 51, 103, 160, 58, 93, 58, 168, 63, 62, 93, 103, 19];

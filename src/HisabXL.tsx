@@ -40,7 +40,10 @@ import {
   MismatchItem,
   VerificationResult,
   colorToCss,
-  extractStyles
+  extractStyles,
+  CANON_TABLE,
+  CANON_INDEX,
+  CANON_COL_WIDTHS_PX
 } from './hisabXL';
 
 const MONTH_NAMES = [
@@ -89,6 +92,7 @@ export default function HisabXLScreen() {
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [verificationReport, setVerificationReport] = useState<HisabCheckReport | null>(null);
+  const [saveFailures, setSaveFailures] = useState<string[]>([]);
 
   // Editing cell state
   const [editingCell, setEditingCell] = useState<EditingCellState | null>(null);
@@ -331,10 +335,20 @@ export default function HisabXLScreen() {
           c?.wch ? c.wch : c?.wpx ? Math.round(c.wpx / 7) : null
         );
 
-        // 7. Extract cell styles
-        const styleRows = Math.max(normalized.length, 53);
-        const styleCols = Math.max(normalized[0]?.length || 0, 37);
-        const { styleTable, styleIndex } = extractStyles(ws, styleRows, styleCols);
+        // 7. Cell styles: day sheets = CANONICAL template DNA (same-to-same PC look, upload file se independent);
+        //    non-day sheets (Reminder etc.) = file se extract
+        let styleTable: Record<string, unknown>[];
+        let styleIndex: (number | null)[][];
+        if (isDay) {
+          styleTable = CANON_TABLE as unknown as Record<string, unknown>[];
+          styleIndex = CANON_INDEX;
+        } else {
+          const styleRows = Math.max(normalized.length, 53);
+          const styleCols = Math.max(normalized[0]?.length || 0, 37);
+          const extracted = extractStyles(ws, styleRows, styleCols);
+          styleTable = extracted.styleTable;
+          styleIndex = extracted.styleIndex;
+        }
 
         parsedSheets[name] = {
           name,
@@ -365,6 +379,7 @@ export default function HisabXLScreen() {
         if (!confirmOverwrite) {
           setVerificationReport(report);
           setShowUploadModal(false);
+          showToast('Upload CANCELLED — kuch bhi save nahi hua, purana data waise ka waisa hai', 'info');
           return;
         }
       }
@@ -372,20 +387,26 @@ export default function HisabXLScreen() {
       setUploadProgress(`Saving ${totalSheets} sheets to Firestore...`);
 
       const uid = auth.currentUser?.uid || 'admin';
-      await saveMonthWorkbookToFirestore(
+      const saveRes = await saveMonthWorkbookToFirestore(
         db,
         monthId,
         monthLabel,
         uid,
         wb.SheetNames,
         parsedSheets,
-        (saved, total) => {
-          setUploadProgress(`Saving sheet ${saved}/${total}...`);
+        (savedCount, totalCount) => {
+          setUploadProgress(`Saving sheet ${savedCount}/${totalCount}...`);
         }
       );
 
       setVerificationReport(report);
-      showToast(`✓ ${monthLabel} upload safal raha!`, 'success');
+      if (saveRes.failed.length > 0) {
+        setSaveFailures(saveRes.failed);
+        showToast(`⚠️ ${saveRes.failed.length} sheets save NAHI hui — niche red banner dekho`, 'error');
+      } else {
+        setSaveFailures([]);
+        showToast(`✓ ${monthLabel} upload safal — ${saveRes.saved.length}/${wb.SheetNames.length} sheets saved!`, 'success');
+      }
       setShowUploadModal(false);
       setSheetsCache({});
       await fetchMonths(false, monthId);
@@ -500,6 +521,8 @@ export default function HisabXLScreen() {
 
   // Visible columns are 0 to 28 (A to AC). AD..AK (29..36) are hidden helper columns in table.
   const visibleColCount = 29;
+  const isDaySheet = !isNaN(Number(activeSheetName)) && activeSheetName.trim() !== '';
+  const monthShort = MONTH_NAMES[Number(String(selectedMonthId).split('-')[1] || 1) - 1]?.slice(0, 3) || '';
 
   return (
     <div className="hisab-fullbleed flex min-h-screen flex-col gap-2 bg-white text-black">
@@ -656,6 +679,24 @@ export default function HisabXLScreen() {
         </div>
       )}
 
+      {/* Save Failures Persistent Banner */}
+      {saveFailures.length > 0 && (
+        <div className="flex items-start justify-between gap-3 border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+          <div>
+            <p className="font-bold">
+              ⚠️ {saveFailures.length} sheets Firestore me save NAHI hui: {saveFailures.slice(0, 12).join(', ')}
+              {saveFailures.length > 12 ? ` +${saveFailures.length - 12} more` : ''}
+            </p>
+            <p className="text-[11px] text-rose-700 mt-0.5">
+              Ye sheets purana data dikha rahi hongi. Internet check karo aur file dobara upload karo. Baar-baar fail ho to F12 console me [HISAB SAVE FAIL] error dekho.
+            </p>
+          </div>
+          <button onClick={() => setSaveFailures([])} className="rounded p-1 text-rose-400 hover:bg-rose-100" title="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Live Formula Total Strip (Slim inline strip) */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-gray-200 bg-gray-50 px-3 py-1.5">
         {/* 1. Cash 1no (AH53) */}
@@ -733,7 +774,7 @@ export default function HisabXLScreen() {
           <div className="flex-1 overflow-auto bg-white" style={{ maxHeight: 'calc(100vh - 150px)' }}>
             <table
               className="w-max border-collapse select-text bg-white"
-              style={{ minWidth: '100%', fontFamily: "Calibri, 'Segoe UI', Arial, sans-serif" }}
+              style={{ minWidth: '100%', fontFamily: "'Comfortaa', 'Segoe UI', sans-serif" }}
             >
               {/* Sticky Column Headers: Row 0 / Column Letters A..AC */}
               <thead className="sticky top-0 z-20 bg-gray-100 shadow-sm">
@@ -742,7 +783,11 @@ export default function HisabXLScreen() {
                   <th className="sticky left-0 z-30 border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-bold text-gray-700 w-12 shrink-0"></th>
                   {Array.from({ length: visibleColCount }).map((_, c) => {
                     const wch = currentSheet?.cols?.[c];
-                    const widthPx = wch ? Math.max(Math.round(wch * 7), 55) : 75;
+                    const widthPx = isDaySheet
+                      ? (CANON_COL_WIDTHS_PX[c] ?? 93)
+                      : wch
+                      ? Math.round(wch * 7) + 5
+                      : 93;
                     return (
                       <th
                         key={c}
@@ -759,7 +804,7 @@ export default function HisabXLScreen() {
               {/* Table Body (53 rows) */}
               <tbody>
                 {liveGrid.map((row, r) => (
-                  <tr key={r} className="hover:opacity-95 transition-opacity">
+                  <tr key={r} className="hover:opacity-95 transition-opacity" style={{ height: r === 0 ? 47 : 26 }}>
                     {/* Row Index Sticky Column (1-based) */}
                     <td className="sticky left-0 z-10 border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-semibold text-gray-600 shrink-0">
                       {r + 1}
@@ -776,10 +821,16 @@ export default function HisabXLScreen() {
 
                       const computed = isComputedCell(r, c);
 
-                      const styleIdx = currentSheet?.styleIndex?.[r]?.[c];
-                      const styleObj: any = (styleIdx !== null && styleIdx !== undefined && currentSheet?.styleTable)
-                        ? currentSheet.styleTable[styleIdx]
-                        : null;
+                      let styleObj: any = null;
+                      if (isDaySheet) {
+                        const ci = CANON_INDEX[r]?.[c];
+                        styleObj = (ci !== null && ci !== undefined) ? CANON_TABLE[ci] : null;
+                      } else {
+                        const styleIdx = currentSheet?.styleIndex?.[r]?.[c];
+                        styleObj = (styleIdx !== null && styleIdx !== undefined && currentSheet?.styleTable)
+                          ? currentSheet.styleTable[styleIdx]
+                          : null;
+                      }
 
                       const bgColor = colorToCss(styleObj?.fill?.fgColor) ?? '#ffffff';
                       const fontColor = colorToCss(styleObj?.font?.color) ?? '#000000';
@@ -825,6 +876,7 @@ export default function HisabXLScreen() {
                           style={{
                             backgroundColor: bgColor,
                             color: fontColor,
+                            fontFamily: styleObj?.font?.name ? `'${styleObj.font.name}', 'Comfortaa', sans-serif` : "'Comfortaa', 'Segoe UI', sans-serif",
                             fontWeight,
                             fontStyle,
                             fontSize,
