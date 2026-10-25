@@ -110,3 +110,42 @@ export interface LedgerEntry {
   lng?: number;
   miracle: boolean;
 }
+
+// OUTSIDE LOG (staff app geofence): staff shop ke radius ke bahar tha.
+// Manager YES = shop ke kaam se gaya tha (koi cut nahi) | NO = rejected
+// -> staff app AUTO credit cut karta hai (-10, cutApplied atomic flag).
+export interface OutsideLog {
+  id?: string;
+  opId?: string;
+  uid: string;
+  name: string;
+  fromAt: number;
+  toAt: number;
+  outsideMin: number;
+  lat?: number;
+  lng?: number;
+  status: 'pending' | 'approved' | 'rejected';
+  flags?: string[]; // gps_teleport / gps_low_accuracy (integrity layer)
+  createdAt: number;
+  cutApplied?: boolean;
+  cutPoints?: number;
+  cutAt?: number;
+  reviewedAt?: number;
+  reviewedBy?: string;
+}
+
+// DUTY GAP (staff app integrity layer): ON duty me app 20 min+ band raha
+// (force-close / background) — reopen par log bana. Manager ko dikhta hai.
+export interface DutyGap {
+  id?: string;
+  opId?: string;
+  uid: string;
+  name: string;
+  fromAt: number;
+  toAt: number;
+  gapMin: number;
+  kind: 'app_closed';
+  status: 'pending' | 'noted';
+  createdAt: number;
+  notedAt?: number;
+}

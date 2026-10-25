@@ -17,7 +17,8 @@ import {
   Menu,
   X,
   LogOut,
-  ShieldAlert
+  ShieldAlert,
+  MapPinOff
 } from 'lucide-react';
 
 import HisabXLScreen from './HisabXL';
@@ -26,11 +27,12 @@ import WorkersScreen from './screens/Workers';
 import LiveScreen from './screens/Live';
 import HisabAdminScreen from './screens/HisabAdmin';
 import SettingsScreen from './screens/Settings';
+import OutsideScreen from './screens/Outside';
 import StaffSpace from './screens/StaffSpace';
 import SalesmanXL from './screens/SalesmanXL';
 import { UserProfile } from './types';
 
-type NavTab = 'hisabxl' | 'approvals' | 'workers' | 'live' | 'hisab' | 'settings';
+type NavTab = 'hisabxl' | 'approvals' | 'workers' | 'live' | 'outside' | 'hisab' | 'settings';
 type SessionRole = 'manager' | 'staff' | 'salesman' | null;
 
 export default function App() {
@@ -44,6 +46,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('hisabxl');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [outsideCount, setOutsideCount] = useState(0);
 
   // Login form state
   const [email, setEmail] = useState('');
@@ -135,6 +138,20 @@ export default function App() {
       }
     );
     return () => unsub();
+  }, [currentUser, sessionRole]);
+
+  // Outside Alerts badge: pending outside_logs + pending duty_gaps (staff app
+  // integrity layer se aane wale signals — manager ko turant dikhe)
+  useEffect(() => {
+    if (!currentUser || sessionRole !== 'manager') return;
+    let pLogs = 0;
+    let pGaps = 0;
+    const recalc = () => setOutsideCount(pLogs + pGaps);
+    const un1 = onSnapshot(query(collection(db, 'outside_logs'), where('status', '==', 'pending')),
+      (s) => { pLogs = s.size || 0; recalc(); }, () => { pLogs = 0; recalc(); });
+    const un2 = onSnapshot(query(collection(db, 'duty_gaps'), where('status', '==', 'pending')),
+      (s) => { pGaps = s.size || 0; recalc(); }, () => { pGaps = 0; recalc(); });
+    return () => { un1(); un2(); };
   }, [currentUser, sessionRole]);
 
   const handleLogout = async () => {
@@ -354,6 +371,12 @@ export default function App() {
       icon: <Activity className="h-4 w-4 text-amber-400" />
     },
     {
+      id: 'outside' as NavTab,
+      title: 'Outside Alerts',
+      icon: <MapPinOff className="h-4 w-4 text-rose-400" />,
+      badge: outsideCount > 0 ? outsideCount : null
+    },
+    {
       id: 'hisab' as NavTab,
       title: 'Hisab Upload & Miracle',
       icon: <FileSpreadsheet className="h-4 w-4 text-teal-400" />
@@ -375,6 +398,8 @@ export default function App() {
         return <WorkersScreen />;
       case 'live':
         return <LiveScreen />;
+      case 'outside':
+        return <OutsideScreen />;
       case 'hisab':
         return <HisabAdminScreen />;
       case 'settings':
