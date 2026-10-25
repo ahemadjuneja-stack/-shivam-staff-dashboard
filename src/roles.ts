@@ -52,7 +52,7 @@ export const ROLES: RoleDefinition[] = [
     label: 'None',
     badgeClass: 'bg-slate-700/40 text-slate-400 border border-slate-600',
     dotColor: 'bg-slate-500',
-    description: 'Koi special module access nahi',
+    description: 'No special module access',
     permissions: [
       'Basic profile view only',
       'No dashboard or operational access'

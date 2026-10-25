@@ -1,5 +1,7 @@
 export type UserRole = 'none' | 'worker' | 'sales' | 'salesman' | 'sales_manager' | 'manager';
-export type UserStatus = 'pending' | 'active' | 'rejected';
+// 'deleted' = soft delete (dashboard se): directory se gayab, login blocked,
+// mobile number re-registration ke liye free (Auth takeover stored PIN se)
+export type UserStatus = 'pending' | 'active' | 'rejected' | 'deleted';
 
 export interface UserProfile {
   uid: string;
@@ -11,6 +13,7 @@ export interface UserProfile {
   createdAt: number;
   approvedAt?: number;
   xlCities?: string[];
+  pin?: string; // login PIN on file (dashboard registration/PIN reset ke liye)
 }
 
 export interface ShopConfig {

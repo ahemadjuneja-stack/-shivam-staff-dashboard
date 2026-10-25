@@ -11,8 +11,9 @@ import {
 import { db } from '../firebase';
 import { UserProfile, WorkLog, StarEvent, UserRole, OutsideLog } from '../types';
 import { ROLES, getRoleDefinition } from '../roles';
-import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer } from 'lucide-react';
+import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer, UserPlus, Pencil, Trash2 } from 'lucide-react';
 import StaffApp from './StaffApp';
+import { registerStaff, updateStaffDetails, changeStaffPin, deleteStaff } from '../staffAdmin';
 
 export default function WorkersScreen() {
   const [workers, setWorkers] = useState<UserProfile[]>([]);
@@ -51,9 +52,9 @@ export default function WorkersScreen() {
         allowedSetAt: Date.now(),
         allowedSetBy: 'workers_inventory'
       });
-      showToast(`${log.name} ka stopwatch set: ${allowedMin} min (on-time = +5, late = -4 auto)`);
+      showToast(`Stopwatch set for ${log.name}: ${allowedMin} min (on-time = +5, late = -4 auto)`);
     } catch (err: any) {
-      showToast(`Timer set fail: ${err.message}`, 'error');
+      showToast(`Timer set failed: ${err.message}`, 'error');
     } finally {
       setBusyStop(null);
     }
@@ -74,6 +75,139 @@ export default function WorkersScreen() {
 
   // Toast State
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // STAFF REGISTRATION + EDIT + DELETE (Boss order 2026-10-26):
+  // dashboard se staff ke sare details fill / edit / delete — strip click par
+  // detail panel ke andar sare options. Registration secondary-app trick se
+  // hoti hai (boss ka login session break nahi hota) + account turant ACTIVE.
+  const [showRegister, setShowRegister] = useState(false);
+  const [regName, setRegName] = useState('');
+  const [regMobile, setRegMobile] = useState('');
+  const [regPin, setRegPin] = useState('');
+  const [regRole, setRegRole] = useState<UserRole>('worker');
+  const [regCity, setRegCity] = useState('Main');
+  const [regXlCities, setRegXlCities] = useState<string[]>([]);
+  const [regCityInput, setRegCityInput] = useState('');
+  const [regBusy, setRegBusy] = useState(false);
+
+  const [detailStaff, setDetailStaff] = useState<UserProfile | null>(null);
+  const [staffToEdit, setStaffToEdit] = useState<UserProfile | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editNewPin, setEditNewPin] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState<UserProfile | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const openDetail = (w: UserProfile) => setDetailStaff(w);
+
+  const openEdit = (w: UserProfile) => {
+    setStaffToEdit(w);
+    setEditName(w.name || '');
+    setEditCity(w.city || '');
+    setEditNewPin('');
+  };
+
+  const handleEditSave = async () => {
+    if (!staffToEdit) return;
+    const name = editName.trim();
+    if (!name) {
+      showToast('Staff name is required.', 'error');
+      return;
+    }
+    setEditBusy(true);
+    try {
+      const res = await updateStaffDetails(staffToEdit.uid, name, editCity);
+      if (!res.ok) {
+        showToast(res.message, 'error');
+        return;
+      }
+      let extra = '';
+      const newPin = editNewPin.trim();
+      if (newPin) {
+        if (!/^\d{4}$/.test(newPin)) {
+          showToast('New PIN must be exactly 4 digits.', 'error');
+          return;
+        }
+        if (!staffToEdit.pin) {
+          showToast('No PIN on file for this account — the staff keeps their current PIN.', 'error');
+          return;
+        }
+        const pinRes = await changeStaffPin(staffToEdit.uid, String(staffToEdit.pin), newPin);
+        if (!pinRes.ok) {
+          showToast(pinRes.message, 'error');
+          return;
+        }
+        extra = ' ' + pinRes.message;
+      }
+      setWorkers((prev) =>
+        prev.map((x) => (x.uid === staffToEdit.uid ? { ...x, name, city: editCity.trim() || 'Main' } : x))
+      );
+      showToast(res.message + extra, 'success');
+      setStaffToEdit(null);
+      setDetailStaff(null);
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = regName.trim();
+    const mobile = regMobile.trim();
+    const pin = regPin.trim();
+    if (!name || !mobile || !pin) {
+      showToast('Please fill all required fields.', 'error');
+      return;
+    }
+    if (mobile.length !== 10) {
+      showToast('Mobile number must be exactly 10 digits.', 'error');
+      return;
+    }
+    if (pin.length !== 4) {
+      showToast('PIN must be exactly 4 digits.', 'error');
+      return;
+    }
+    setRegBusy(true);
+    try {
+      const res = await registerStaff({ name, mobile, pin, role: regRole, city: regCity, xlCities: regXlCities });
+      showToast(res.message, res.ok ? 'success' : 'error');
+      if (res.ok) {
+        setShowRegister(false);
+        setRegName('');
+        setRegMobile('');
+        setRegPin('');
+        setRegRole('worker');
+        setRegCity('Main');
+        setRegXlCities([]);
+        setRegCityInput('');
+      }
+    } finally {
+      setRegBusy(false);
+    }
+  };
+
+  const handleDeleteStaff = async () => {
+    if (!staffToDelete) return;
+    if (deleteConfirmText.trim() !== String(staffToDelete.name || '').trim()) {
+      showToast('Type the staff name exactly to confirm deletion.', 'error');
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      const res = await deleteStaff(staffToDelete.uid, staffToDelete.name);
+      showToast(res.message, res.ok ? 'success' : 'error');
+      if (res.ok) {
+        setWorkers((prev) => prev.filter((x) => x.uid !== staffToDelete.uid));
+        setStaffToDelete(null);
+        setDeleteConfirmText('');
+        setDetailStaff(null);
+      }
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -202,9 +336,9 @@ export default function WorkersScreen() {
       console.error('Role update error:', err);
       const errorMsg = String((err as Error)?.message || '');
       if (errorMsg.includes('permission') || errorMsg.includes('Permission')) {
-        showToast('Permission denied — Rules publish karo', 'error');
+        showToast('Permission denied — publish the Firestore rules first', 'error');
       } else {
-        showToast(`Role change fail hua: ${errorMsg}`, 'error');
+        showToast(`Role change failed: ${errorMsg}`, 'error');
       }
     } finally {
       setSavingRole(false);
@@ -227,7 +361,7 @@ export default function WorkersScreen() {
       }
       showToast(`Role changed to ${targetRoleDef.label} for ${targetName} — active on their phone now!`, 'success');
     } catch (err: unknown) {
-      showToast(`Role change fail hua: ${(err as Error)?.message || ''}`, 'error');
+      showToast(`Role change failed: ${(err as Error)?.message || ''}`, 'error');
     }
   };
 
@@ -259,7 +393,7 @@ export default function WorkersScreen() {
       <div className="border-b border-slate-800 pb-4">
         <h2 className="text-base font-bold text-white tracking-wide">STAFF MANAGEMENT &amp; ROLE CONTROL</h2>
         <p className="text-xs text-slate-400">
-          Staff role management, work log verifications, star adjustments, aur live directory.
+          Staff role management, work log verifications, star adjustments, and the live directory.
         </p>
       </div>
 
@@ -273,7 +407,7 @@ export default function WorkersScreen() {
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-lg">
         <h3 className="text-sm font-bold text-white mb-3">Pending Work Logs to Verify ({workLogs.length})</h3>
         {workLogs.length === 0 ? (
-          <p className="text-xs text-slate-500 py-4 text-center">Koi pending work logs nahi hain.</p>
+          <p className="text-xs text-slate-500 py-4 text-center">No pending work logs.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {workLogs.map((log) => (
@@ -313,19 +447,28 @@ export default function WorkersScreen() {
           <div>
             <h3 className="text-sm font-bold text-white">Active Staff Directory ({workers.length})</h3>
             <p className="text-[11px] text-slate-400">
-              Kissi bhi staff ka role yahan se badle — staff app me access turant apply hoga.
+              Change any staff role here — access applies on their app instantly. Tap a staff row to edit details or delete.
             </p>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-slate-400">
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-blue-500" /> Salesman
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-purple-500" /> Sales Manager
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-slate-500" /> Worker / None
-            </span>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              onClick={() => setShowRegister(true)}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition flex items-center gap-1.5"
+            >
+              <UserPlus className="h-4 w-4" />
+              Register Staff
+            </button>
+            <div className="flex items-center gap-2 text-[10px] text-slate-400">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-blue-500" /> Salesman
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-purple-500" /> Sales Manager
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-slate-500" /> Worker / None
+              </span>
+            </div>
           </div>
         </div>
 
@@ -355,12 +498,16 @@ export default function WorkersScreen() {
                   ? Math.max(0, openLog.allowedMin - elapsedMin) : null;
 
                 return (
-                  <tr key={w.uid} className={`hover:bg-slate-800/30 transition ${openLog ? 'bg-rose-500/[0.04]' : ''}`}>
+                  <tr
+                    key={w.uid}
+                    onClick={() => openDetail(w)}
+                    className={`hover:bg-slate-800/30 transition cursor-pointer ${openLog ? 'bg-rose-500/[0.04]' : ''}`}
+                  >
                     <td className="p-3 font-bold text-white">
                       {w.name}
                       {openLog && (
                         <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-black text-rose-300">
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" /> BAHAR
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" /> OUT
                         </span>
                       )}
                     </td>
@@ -382,7 +529,7 @@ export default function WorkersScreen() {
                           </span>
                           {typeof openLog.allowedMin === 'number' ? (
                             <span className={`text-[9.5px] font-bold ${over ? 'text-rose-400' : 'text-emerald-400'}`}>
-                              {over ? 'TIME OVER — wapas nahi aaya' : `${remaining}m baaki (on-time = +5)`}
+                              {over ? 'TIME OVER — not back yet' : `${remaining}m left (on-time = +5)`}
                             </span>
                           ) : (
                             <div className="flex items-center gap-1">
@@ -435,7 +582,7 @@ export default function WorkersScreen() {
                       <div className="flex items-center justify-end gap-2">
                         {/* Preview Staff App Button */}
                         <button
-                          onClick={() => setPreviewWorker(w)}
+                          onClick={(e) => { e.stopPropagation(); setPreviewWorker(w); }}
                           className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 hover:text-white transition flex items-center gap-1"
                           title="Preview Staff Mobile App as this user"
                         >
@@ -445,7 +592,7 @@ export default function WorkersScreen() {
 
                         {/* Change Role Button */}
                         <button
-                          onClick={() => openRoleChangeModal(w)}
+                          onClick={(e) => { e.stopPropagation(); openRoleChangeModal(w); }}
                           className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition flex items-center gap-1"
                           title="Change Staff Role"
                         >
@@ -455,7 +602,7 @@ export default function WorkersScreen() {
 
                         {/* Adjust Stars Button (untouched) */}
                         <button
-                          onClick={() => setSelectedWorker(w)}
+                          onClick={(e) => { e.stopPropagation(); setSelectedWorker(w); }}
                           className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold hover:bg-slate-700 text-slate-300 hover:text-white transition"
                         >
                           Adjust Stars
@@ -469,6 +616,444 @@ export default function WorkersScreen() {
           </table>
         </div>
       </div>
+
+      {/* STAFF DETAIL PANEL (Boss order 2026-10-26: strip click par andar sare options) */}
+      {detailStaff && (() => {
+        const dRoleDef = getRoleDefinition(detailStaff.role);
+        const dScore = starScores[detailStaff.uid] !== undefined ? starScores[detailStaff.uid] : 3.0;
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+            onClick={() => setDetailStaff(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-11 w-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-indigo-600/30">
+                    {String(detailStaff.name || 'S').charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">{detailStaff.name}</h3>
+                    <span className={`mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] border ${dRoleDef.badgeClass}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${dRoleDef.dotColor}`} />
+                      {dRoleDef.label}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={() => setDetailStaff(null)} className="text-slate-400 hover:text-white">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mobile</p>
+                  <p className="font-mono text-slate-200 mt-0.5">{detailStaff.mobile || '—'}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">City / Branch</p>
+                  <p className="text-slate-200 mt-0.5">{detailStaff.city || 'Main'}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Star Rating</p>
+                  <p className="font-bold text-amber-400 mt-0.5">★ {dScore.toFixed(1)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Registered On</p>
+                  <p className="text-slate-200 mt-0.5">
+                    {detailStaff.createdAt ? new Date(detailStaff.createdAt).toLocaleDateString('en-IN') : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Options */}
+              <div className="space-y-2 pt-1">
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Staff Options</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => openEdit(detailStaff)}
+                    className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 py-2.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit Details
+                  </button>
+                  <button
+                    onClick={() => { setDetailStaff(null); openRoleChangeModal(detailStaff); }}
+                    className="rounded-xl border border-purple-500/30 bg-purple-500/10 py-2.5 text-xs font-bold text-purple-300 hover:bg-purple-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    Change Role
+                  </button>
+                  <button
+                    onClick={() => { setDetailStaff(null); setSelectedWorker(detailStaff); }}
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Adjust Stars
+                  </button>
+                  <button
+                    onClick={() => { setDetailStaff(null); setPreviewWorker(detailStaff); }}
+                    className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                  >
+                    <Smartphone className="h-3.5 w-3.5" />
+                    Preview App
+                  </button>
+                </div>
+                <button
+                  onClick={() => { setStaffToDelete(detailStaff); setDeleteConfirmText(''); setDetailStaff(null); }}
+                  className="w-full rounded-xl border border-rose-500/30 bg-rose-500/10 py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete Staff
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* REGISTER STAFF MODAL (Boss: dashboard se staff ke sare details fill) */}
+      {showRegister && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleRegister}
+            className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-sm font-bold text-white">Register New Staff</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => !regBusy && setShowRegister(false)}
+                disabled={regBusy}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-400 bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-2.5">
+              The staff account is created and active immediately — they can log in on their phone with this mobile number and PIN. No separate approval needed.
+            </p>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300">Full Name *</label>
+              <input
+                type="text"
+                required
+                value={regName}
+                onChange={(e) => setRegName(e.target.value)}
+                placeholder="e.g. Ramesh Patel"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-300">Mobile (10 Digits) *</label>
+                <input
+                  type="tel"
+                  required
+                  maxLength={10}
+                  value={regMobile}
+                  onChange={(e) => setRegMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="9876543210"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-300">Login PIN (4 Digits) *</label>
+                <input
+                  type="password"
+                  required
+                  maxLength={4}
+                  value={regPin}
+                  onChange={(e) => setRegPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="••••"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-center text-lg tracking-widest text-white focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300">City / Branch</label>
+              <input
+                type="text"
+                value={regCity}
+                onChange={(e) => setRegCity(e.target.value)}
+                placeholder="Main"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300">Role *</label>
+              <div className="mt-1.5 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRegRole('worker')}
+                  className={`p-2.5 rounded-xl border text-left transition ${
+                    regRole === 'worker'
+                      ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500'
+                      : 'border-slate-800 bg-slate-800/60 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-white block">Staff</span>
+                  <span className="text-[9.5px] text-slate-400 leading-snug">Tasks, duty, credit score</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRegRole('sales')}
+                  className={`p-2.5 rounded-xl border text-left transition ${
+                    regRole === 'sales'
+                      ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500'
+                      : 'border-slate-800 bg-slate-800/60 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-white block">Salesman</span>
+                  <span className="text-[9.5px] text-slate-400 leading-snug">City XL sheets, no location lock</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRegRole('manager')}
+                  className={`p-2.5 rounded-xl border text-left transition ${
+                    regRole === 'manager'
+                      ? 'border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500'
+                      : 'border-slate-800 bg-slate-800/60 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="text-xs font-bold text-white block">Manager</span>
+                  <span className="text-[9.5px] text-slate-400 leading-snug">Full dashboard access</span>
+                </button>
+              </div>
+            </div>
+
+            {/* XL Cities for salesman */}
+            {regRole === 'sales' && (
+              <div className="space-y-2 border-t border-slate-800 pt-3">
+                <label className="text-xs font-bold text-slate-300">Salesman XL City Permissions:</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={regCityInput}
+                    onChange={(e) => setRegCityInput(e.target.value)}
+                    placeholder="Enter city (e.g. Patan)"
+                    className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const c = regCityInput.trim();
+                        if (c && !regXlCities.includes(c)) {
+                          setRegXlCities([...regXlCities, c]);
+                          setRegCityInput('');
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const c = regCityInput.trim();
+                      if (c && !regXlCities.includes(c)) {
+                        setRegXlCities([...regXlCities, c]);
+                        setRegCityInput('');
+                      }
+                    }}
+                    className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500 transition"
+                  >
+                    Add City
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {regXlCities.length === 0 ? (
+                    <span className="text-[11px] text-slate-500 italic">No cities added yet — the salesman will not see any XL sheets.</span>
+                  ) : (
+                    regXlCities.map((city, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-300 border border-blue-500/20 text-xs font-bold">
+                        {city}
+                        <button
+                          type="button"
+                          onClick={() => setRegXlCities(regXlCities.filter((_, i) => i !== idx))}
+                          className="text-blue-400 hover:text-rose-400 ml-1 font-bold"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowRegister(false)}
+                disabled={regBusy}
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-300 hover:text-white transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={regBusy}
+                className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {regBusy && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+                <span>{regBusy ? 'Creating Account...' : 'Create Staff Account'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* EDIT STAFF DETAILS MODAL */}
+      {staffToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleEditSave(); }}
+            className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Pencil className="h-5 w-5 text-indigo-400" />
+                <h3 className="text-sm font-bold text-white">Edit Staff Details</h3>
+              </div>
+              <button type="button" onClick={() => !editBusy && setStaffToEdit(null)} disabled={editBusy} className="text-slate-400 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Staff: <strong className="text-white">{staffToEdit.name}</strong> ({staffToEdit.mobile})
+            </p>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300">Full Name *</label>
+              <input
+                type="text"
+                required
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300">City / Branch</label>
+              <input
+                type="text"
+                value={editCity}
+                onChange={(e) => setEditCity(e.target.value)}
+                placeholder="Main"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300">New Login PIN (optional)</label>
+              <input
+                type="password"
+                maxLength={4}
+                value={editNewPin}
+                onChange={(e) => setEditNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="Leave blank to keep current PIN"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-center text-lg tracking-widest text-white focus:border-indigo-500 focus:outline-none"
+              />
+              {staffToEdit.pin ? (
+                <p className="text-[10px] text-slate-500 mt-1">Enter a new 4-digit PIN only if you want to change their login PIN.</p>
+              ) : (
+                <p className="text-[10px] text-amber-400/80 mt-1">No PIN on file for this account — the PIN cannot be changed here. The staff keeps their current PIN.</p>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setStaffToEdit(null)}
+                disabled={editBusy}
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 py-2.5 text-xs font-bold text-slate-300 hover:text-white transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={editBusy}
+                className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50 transition flex items-center justify-center gap-2"
+              >
+                {editBusy && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+                <span>{editBusy ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* DELETE STAFF CONFIRMATION MODAL */}
+      {staffToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-rose-500/30 bg-slate-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5 text-rose-400" />
+                <h3 className="text-sm font-bold text-white">Delete Staff</h3>
+              </div>
+              <button onClick={() => !deleteBusy && setStaffToDelete(null)} disabled={deleteBusy} className="text-slate-400 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              You are deleting <strong className="text-white">{staffToDelete.name}</strong> ({staffToDelete.mobile}).
+            </p>
+
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] text-amber-300 space-y-1.5">
+              <p className="font-bold">What happens after deletion:</p>
+              <p>• Their app login is blocked immediately.</p>
+              <p>• The mobile number becomes free — you can register a new staff on the same number.</p>
+              <p>• Old attendance and work history stays safe on the dashboard.</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-300">
+                Type <span className="text-rose-300">"{staffToDelete.name}"</span> to confirm
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={staffToDelete.name}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2.5 text-sm text-white focus:border-rose-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setStaffToDelete(null)}
+                disabled={deleteBusy}
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 py-2.5 text-xs font-bold text-slate-300 hover:text-white transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteStaff}
+                disabled={deleteBusy}
+                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-500 disabled:opacity-50 transition flex items-center justify-center gap-2"
+              >
+                {deleteBusy && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+                <span>{deleteBusy ? 'Deleting...' : 'Delete Permanently'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Role Management Confirmation Modal with Access Preview */}
       {roleModalStaff && (
@@ -502,7 +1087,7 @@ export default function WorkersScreen() {
 
             {/* Role Selection Dropdown / Buttons */}
             <div>
-              <label className="text-xs font-bold text-slate-300">Naya Role Chunein:</label>
+              <label className="text-xs font-bold text-slate-300">Select New Role:</label>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {ROLES.map((r) => {
                   const isSelected = targetRole === r.value;
@@ -531,7 +1116,7 @@ export default function WorkersScreen() {
             {/* XL Cities Editor for Salesman */}
             {targetRole === 'sales' && (
               <div className="space-y-2 border-t border-slate-800 pt-3">
-                <label className="text-xs font-bold text-slate-300">Salesman XL Cities Permission:</label>
+                <label className="text-xs font-bold text-slate-300">Salesman XL City Permissions:</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -588,7 +1173,7 @@ export default function WorkersScreen() {
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                 <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-                  Is role me ye sab access milenge:
+                  Access granted with this role:
                 </span>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${activeRoleDef.badgeClass}`}>
                   {activeRoleDef.label}
@@ -604,14 +1189,14 @@ export default function WorkersScreen() {
               </ul>
               {targetRole === 'none' && (
                 <p className="text-[11px] text-amber-400/90 font-medium pt-1 border-t border-slate-800/80">
-                  ⚠️ Note: 'None' role par sales module (sheets/customers/entries/bills) poori tarah block ho jayega.
+                  ⚠ Note: With the 'None' role, the whole sales module (sheets / customers / entries / bills) is fully blocked.
                 </p>
               )}
             </div>
 
             <p className="text-[11px] text-emerald-400/90 font-medium flex items-center gap-1.5 bg-emerald-500/5 p-2 rounded-lg border border-emerald-500/20">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span>Full access staff app me bina logout ya reinstall ke turant ("on the spot") apply hoga.</span>
+              <span>Changes apply instantly in the staff app — no logout or reinstall needed.</span>
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
@@ -748,7 +1333,7 @@ export default function WorkersScreen() {
                   Live "On The Spot" Role Switch
                 </p>
                 <p className="text-[11px] text-slate-400">
-                  Kisi bhi role button par tap karein — phone preview me bina refresh ke turant apply hoga:
+                  Tap any role button — it applies instantly in the phone preview without refresh:
                 </p>
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   {ROLES.map((r) => {
@@ -780,7 +1365,7 @@ export default function WorkersScreen() {
                 <p className="font-bold">Observations to verify:</p>
                 <p>• <strong>Worker / None</strong>: Sales tab locks &amp; redirects to Duty screen instantly.</p>
                 <p>• <strong>Salesman / Manager</strong>: Sales tab unlocks immediately with Sheets, Customers, Entries &amp; Bills.</p>
-                <p>• Explanatory banner <em>"Aapka role update ho gaya hai"</em> displays automatically.</p>
+                <p>• Explanatory banner <em>"Your role has been updated"</em> displays automatically.</p>
               </div>
 
               <button

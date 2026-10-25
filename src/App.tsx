@@ -32,6 +32,7 @@ import OutsideAlertPopup from './OutsidePopup';
 import StaffSpace from './screens/StaffSpace';
 import SalesmanXL from './screens/SalesmanXL';
 import { UserProfile } from './types';
+import ShivamLogo from './components/ShivamLogo';
 
 type NavTab = 'hisabxl' | 'approvals' | 'workers' | 'live' | 'outside' | 'hisab' | 'settings';
 type SessionRole = 'manager' | 'staff' | 'salesman' | null;
@@ -226,7 +227,7 @@ export default function App() {
       }
     } catch (err: unknown) {
       const error = err as Error;
-      setAuthError(error.message || 'Authentication error. Details check karein.');
+      setAuthError(error.message || 'Authentication failed. Please check your details and try again.');
     } finally {
       setAuthLoading(false);
     }
@@ -254,7 +255,7 @@ export default function App() {
           </div>
           <h2 className="text-xl font-bold text-white">Access Denied</h2>
           <p className="text-xs text-rose-300 bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20 font-medium">
-            Ye account active nahi hai ya authorized nahi hai. Aap sign out kar diye gaye hain.
+            This account is not active or not authorized. You have been signed out.
           </p>
           <button
             type="button"
@@ -273,11 +274,8 @@ export default function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
         <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/90 p-8 shadow-2xl backdrop-blur">
-          <div className="mb-6 text-center">
-            <h1 className="text-2xl font-black tracking-wider text-white">SHIVAM STAFF</h1>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-indigo-400">
-              Shivam Dashboard
-            </p>
+          <div className="mb-7 text-center flex flex-col items-center">
+            <ShivamLogo size="lg" subtitle="Manager Dashboard" />
           </div>
 
           {authError && (
@@ -434,14 +432,11 @@ export default function App() {
       >
         {/* Brand Header */}
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-          <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black shadow-lg shadow-indigo-600/30">
-              S
-            </div>
-            <div>
-              <h1 className="text-sm font-black tracking-wider text-white">SHIVAM STAFF</h1>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Manager Dashboard</p>
-            </div>
+          <div className="flex flex-col items-start">
+            <span className="shivam-silver shivam-silver-shine-slow text-base tracking-[0.28em] font-bold leading-none">
+              S H I V A M
+            </span>
+            <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-indigo-400 mt-1">Manager Dashboard</p>
           </div>
           <button
             onClick={() => setMobileMenuOpen(false)}
