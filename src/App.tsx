@@ -28,6 +28,7 @@ import LiveScreen from './screens/Live';
 import HisabAdminScreen from './screens/HisabAdmin';
 import SettingsScreen from './screens/Settings';
 import OutsideScreen from './screens/Outside';
+import OutsideAlertPopup from './OutsidePopup';
 import StaffSpace from './screens/StaffSpace';
 import SalesmanXL from './screens/SalesmanXL';
 import { UserProfile } from './types';
@@ -140,18 +141,20 @@ export default function App() {
     return () => unsub();
   }, [currentUser, sessionRole]);
 
-  // Outside Alerts badge: pending outside_logs + pending duty_gaps (staff app
-  // integrity layer se aane wale signals — manager ko turant dikhe)
+  // Outside Alerts badge: OPEN (abhi bahar — live) + pending outside_logs + pending duty_gaps
   useEffect(() => {
     if (!currentUser || sessionRole !== 'manager') return;
+    let oLogs = 0;
     let pLogs = 0;
     let pGaps = 0;
-    const recalc = () => setOutsideCount(pLogs + pGaps);
+    const recalc = () => setOutsideCount(oLogs + pLogs + pGaps);
+    const un0 = onSnapshot(query(collection(db, 'outside_logs'), where('status', '==', 'open')),
+      (s) => { oLogs = s.size || 0; recalc(); }, () => { oLogs = 0; recalc(); });
     const un1 = onSnapshot(query(collection(db, 'outside_logs'), where('status', '==', 'pending')),
       (s) => { pLogs = s.size || 0; recalc(); }, () => { pLogs = 0; recalc(); });
     const un2 = onSnapshot(query(collection(db, 'duty_gaps'), where('status', '==', 'pending')),
       (s) => { pGaps = s.size || 0; recalc(); }, () => { pGaps = 0; recalc(); });
-    return () => { un1(); un2(); };
+    return () => { un0(); un1(); un2(); };
   }, [currentUser, sessionRole]);
 
   const handleLogout = async () => {
@@ -411,6 +414,10 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans">
+      {/* GLOBAL OUTSIDE POPUP (Boss order 2026-10-26): staff 100m bahar jate hi
+          har tab par modal — kon gaya + stopwatch set. Sirf manager session. */}
+      <OutsideAlertPopup />
+
       {/* Mobile Sidebar Overlay */}
       {mobileMenuOpen && (
         <div

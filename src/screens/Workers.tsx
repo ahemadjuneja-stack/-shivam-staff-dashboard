@@ -9,9 +9,9 @@ import {
   addDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { UserProfile, WorkLog, StarEvent, UserRole } from '../types';
+import { UserProfile, WorkLog, StarEvent, UserRole, OutsideLog } from '../types';
 import { ROLES, getRoleDefinition } from '../roles';
-import { Check, AlertCircle, X, Shield, Sparkles, Smartphone } from 'lucide-react';
+import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer } from 'lucide-react';
 import StaffApp from './StaffApp';
 
 export default function WorkersScreen() {
@@ -20,6 +20,44 @@ export default function WorkersScreen() {
   const [starScores, setStarScores] = useState<{ [uid: string]: number }>({});
   const [selectedWorker, setSelectedWorker] = useState<UserProfile | null>(null);
   const [previewWorker, setPreviewWorker] = useState<UserProfile | null>(null);
+
+  // STOPWATCH INVENTORY (Boss order 2026-10-26): har staff ke naam ke saath
+  // stopwatch — staff 100m bahar gaya (open outside event) to timer chalu.
+  // Timer SIRF dashboard se set hota hai (allowedMin) — staff app se nahi.
+  const [openOutside, setOpenOutside] = useState<OutsideLog[]>([]);
+  const [, setTick] = useState(0);
+  const [mins, setMins] = useState<Record<string, string>>({});
+  const [busyStop, setBusyStop] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((x) => x + 1), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(query(collection(db, 'outside_logs'), where('status', '==', 'open')),
+      (snap) => setOpenOutside(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OutsideLog, 'id'>) }))),
+      () => setOpenOutside([]));
+    return () => unsub();
+  }, []);
+
+  const setAllowedMin = async (log: OutsideLog) => {
+    if (!log.id) return;
+    const allowedMin = Math.max(1, Math.min(240, Math.round(Number(mins[log.id] || 15) || 15)));
+    setBusyStop(log.id);
+    try {
+      await updateDoc(doc(db, 'outside_logs', log.id), {
+        allowedMin,
+        allowedSetAt: Date.now(),
+        allowedSetBy: 'workers_inventory'
+      });
+      showToast(`${log.name} ka stopwatch set: ${allowedMin} min (on-time = +5, late = -10 auto)`);
+    } catch (err: any) {
+      showToast(`Timer set fail: ${err.message}`, 'error');
+    } finally {
+      setBusyStop(null);
+    }
+  };
 
   // Manual Adjust Modal
   const [manualDelta, setManualDelta] = useState<number>(1);
@@ -296,6 +334,7 @@ export default function WorkersScreen() {
             <thead className="bg-slate-800/60 uppercase text-[10px] text-slate-400">
               <tr>
                 <th className="p-3">Staff Name</th>
+                <th className="p-3">Stopwatch</th>
                 <th className="p-3">Mobile</th>
                 <th className="p-3">City</th>
                 <th className="p-3">Role</th>
@@ -308,10 +347,72 @@ export default function WorkersScreen() {
                 const score = starScores[w.uid] !== undefined ? starScores[w.uid] : 3.0;
                 const isUnderperforming = score < 2.0;
                 const roleDef = getRoleDefinition(w.role);
+                const openLog = openOutside.find((l) => l.uid === w.uid);
+                const elapsedMs = openLog ? Date.now() - openLog.fromAt : 0;
+                const elapsedMin = Math.floor(elapsedMs / 60000);
+                const over = openLog && typeof openLog.allowedMin === 'number' && elapsedMs > openLog.allowedMin * 60000;
+                const remaining = openLog && typeof openLog.allowedMin === 'number'
+                  ? Math.max(0, openLog.allowedMin - elapsedMin) : null;
 
                 return (
-                  <tr key={w.uid} className="hover:bg-slate-800/30 transition">
-                    <td className="p-3 font-bold text-white">{w.name}</td>
+                  <tr key={w.uid} className={`hover:bg-slate-800/30 transition ${openLog ? 'bg-rose-500/[0.04]' : ''}`}>
+                    <td className="p-3 font-bold text-white">
+                      {w.name}
+                      {openLog && (
+                        <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-black text-rose-300">
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" /> BAHAR
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      {openLog ? (
+                        <div className="flex flex-col gap-1.5">
+                          <span className={`inline-flex w-fit items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[13px] font-black tabular-nums ${
+                            over
+                              ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300'
+                              : typeof openLog.allowedMin === 'number'
+                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                          }`}>
+                            <Timer className={`h-3.5 w-3.5 ${over ? 'text-rose-400' : typeof openLog.allowedMin === 'number' ? 'text-emerald-400' : 'text-amber-400'}`} />
+                            {String(Math.floor(elapsedMin / 60)).padStart(2, '0')}:{String(elapsedMin % 60).padStart(2, '0')}
+                            {typeof openLog.allowedMin === 'number' && (
+                              <span className="text-[9px] font-bold text-slate-400">/ {openLog.allowedMin}m</span>
+                            )}
+                          </span>
+                          {typeof openLog.allowedMin === 'number' ? (
+                            <span className={`text-[9.5px] font-bold ${over ? 'text-rose-400' : 'text-emerald-400'}`}>
+                              {over ? 'TIME OVER — wapas nahi aaya' : `${remaining}m baaki (on-time = +5)`}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              {[15, 20, 30].map((n) => (
+                                <button
+                                  key={n}
+                                  onClick={() => setMins((m) => ({ ...m, [openLog.id!]: String(n) }))}
+                                  className={`rounded border px-1.5 py-0.5 text-[9.5px] font-black transition ${
+                                    Number(mins[openLog.id ?? ''] || 15) === n
+                                      ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200'
+                                      : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {n}m
+                                </button>
+                              ))}
+                              <button
+                                onClick={() => setAllowedMin(openLog)}
+                                disabled={busyStop === openLog.id}
+                                className="rounded bg-indigo-600 px-2 py-0.5 text-[9.5px] font-black text-white hover:bg-indigo-500 disabled:opacity-50 transition"
+                              >
+                                {busyStop === openLog.id ? '...' : 'Set'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
                     <td className="p-3 font-mono text-slate-400">{w.mobile}</td>
                     <td className="p-3">{w.city || 'Head Office'}</td>
                     <td className="p-3">

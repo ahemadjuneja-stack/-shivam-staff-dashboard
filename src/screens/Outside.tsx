@@ -73,6 +73,14 @@ export default function OutsideScreen() {
   const [devices, setDevices] = useState<DeviceReport[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string>('');
+  // LIVE stopwatch tick (open events ka elapsed har second update)
+  const [, setTick] = useState(0);
+  const [mins, setMins] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((x) => x + 1), 1000);
+    return () => window.clearInterval(t);
+  }, []);
 
   useEffect(() => {
     const unsubs = [
@@ -103,17 +111,42 @@ export default function OutsideScreen() {
     return () => unsubs.forEach((u) => u());
   }, []);
 
+  const openLogs = logs.filter((l) => l.status === 'open');
   const pendingLogs = logs.filter((l) => l.status === 'pending');
-  const reviewedLogs = logs.filter((l) => l.status !== 'pending').slice(0, 30);
+  const reviewedLogs = logs.filter((l) => l.status === 'approved' || l.status === 'rejected').slice(0, 30);
   const pendingGaps = gaps.filter((g) => g.status === 'pending');
   const staffDevices = devices.filter((d) => d.role === 'worker' || d.role === 'sales' || d.role === 'salesman');
 
+  // allowed minutes set (STOPWATCH — sirf dashboard se timer lag sakta hai)
+  const setAllowed = async (log: OutsideLog) => {
+    if (!log.id || busyId) return;
+    const allowedMin = Math.max(1, Math.min(240, Math.round(Number(mins[log.id] || 15) || 15)));
+    setBusyId(log.id);
+    try {
+      await updateDoc(doc(db, 'outside_logs', log.id), {
+        allowedMin,
+        allowedSetAt: Date.now(),
+        allowedSetBy: auth.currentUser?.email || 'manager'
+      });
+      setMsg(`Stopwatch set: ${log.name} ko ${allowedMin} min bola gaya — on-time wapas (+5) / late (-10) auto.`);
+      setTimeout(() => setMsg(''), 4500);
+    } catch (err) {
+      setMsg('Failed: ' + (err as Error).message);
+      setTimeout(() => setMsg(''), 4000);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const review = async (log: OutsideLog, approve: boolean) => {
     if (!log.id || busyId) return;
+    const durTxt = log.status === 'open'
+      ? `${Math.round((Date.now() - log.fromAt) / 60000)} min se bahar hai (abhi bhi)`
+      : `${fmtMin(log.outsideMin || 0)} bahar tha`;
     if (!approve) {
       const ok = window.confirm(
-        `NO confirm: ${log.name} was outside for ${fmtMin(log.outsideMin)}.\n` +
-        'Staff app will AUTO-cut 10 credit points (taskScore -10).'
+        `NO confirm: ${log.name} ${durTxt}.\n` +
+        'Staff app will AUTO-cut credit points (taskScore -10).'
       );
       if (!ok) return;
     }
@@ -124,7 +157,7 @@ export default function OutsideScreen() {
         reviewedAt: Date.now(),
         reviewedBy: auth.currentUser?.email || 'manager'
       });
-      setMsg(approve ? 'Approved — koi cut nahi hua.' : 'Rejected — staff app pe auto cut apply ho jayega.');
+      setMsg(approve ? 'Approved — koi cut nahi hoga.' : 'Rejected — staff app pe auto cut apply ho jayega.');
       setTimeout(() => setMsg(''), 4000);
     } catch (err) {
       setMsg('Failed: ' + (err as Error).message);
@@ -144,7 +177,7 @@ export default function OutsideScreen() {
     }
   };
 
-  const totalPending = pendingLogs.length + pendingGaps.length;
+  const totalPending = openLogs.length + pendingLogs.length + pendingGaps.length;
   const flagChip = (f: string): { label: string; cls: string } =>
     f === 'gps_teleport'
       ? { label: 'GPS TELEPORT', cls: 'border-rose-500/30 bg-rose-500/10 text-rose-400' }
@@ -190,7 +223,110 @@ export default function OutsideScreen() {
         </div>
       )}
 
-      {/* Pending outside logs — YES / NO review */}
+      {/* LIVE OUTSIDE (open events) — staff ABHI bahar hai: live stopwatch + timer set */}
+      {openLogs.length > 0 && (
+        <div className="rounded-2xl border border-rose-500/30 bg-slate-900">
+          <div className="flex items-center justify-between border-b border-rose-500/25 px-5 py-3.5">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500"></span>
+              </span>
+              <h3 className="text-sm font-black uppercase tracking-wider text-white">LIVE — Abhi Bahar Hai ({openLogs.length})</h3>
+            </div>
+            <span className="text-[10px] font-semibold text-slate-500">stopwatch timer sirf dashboard se lagta hai</span>
+          </div>
+          <div className="divide-y divide-slate-800">
+            {openLogs.map((log) => {
+              const elapsedMs = Date.now() - log.fromAt;
+              const elapsedMin = Math.floor(elapsedMs / 60000);
+              const over = typeof log.allowedMin === 'number' && elapsedMs > log.allowedMin * 60000;
+              const remaining = typeof log.allowedMin === 'number' ? Math.max(0, log.allowedMin - elapsedMin) : null;
+              return (
+                <div key={log.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-bold text-white">{log.name}</span>
+                      <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-black text-rose-400">
+                        {elapsedMin} min se BAHAR
+                      </span>
+                      {typeof log.allowedMin === 'number' && (
+                        <span className={`rounded-md border px-2 py-0.5 text-[10px] font-black ${
+                          over ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        }`}>
+                          {over ? `TIME OVER (bola tha ${log.allowedMin}m)` : `${remaining}m baaki (bola tha ${log.allowedMin}m)`}
+                        </span>
+                      )}
+                      {(log.flags || []).map((f) => {
+                        const c = flagChip(f);
+                        return (
+                          <span key={f} className={`rounded-md border px-2 py-0.5 text-[10px] font-black ${c.cls}`}>{c.label}</span>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-slate-400">
+                      <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{fmtDT(log.fromAt)} se chal raha hai</span>
+                      {typeof log.lat === 'number' && typeof log.lng === 'number' && (
+                        <span className="inline-flex items-center gap-1"><RefreshCw className="h-3 w-3" />{log.lat.toFixed(4)}, {log.lng.toFixed(4)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {typeof log.allowedMin !== 'number' && (
+                      <>
+                        {[10, 15, 20, 30].map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => setMins((m) => ({ ...m, [log.id!]: String(n) }))}
+                            className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-black transition ${
+                              Number(mins[log.id ?? ''] || 15) === n
+                                ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200'
+                                : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                            }`}
+                          >
+                            {n}m
+                          </button>
+                        ))}
+                        <input
+                          type="number"
+                          min={1}
+                          max={240}
+                          value={mins[log.id ?? ''] ?? '15'}
+                          onChange={(e) => setMins((m) => ({ ...m, [log.id!]: e.target.value }))}
+                          className="w-14 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-[11px] font-bold text-white focus:border-indigo-500 focus:outline-none"
+                        />
+                        <button
+                          onClick={() => setAllowed(log)}
+                          disabled={busyId === log.id}
+                          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-black text-white shadow-lg shadow-indigo-600/25 hover:bg-indigo-500 disabled:opacity-50 transition"
+                        >
+                          {busyId === log.id ? '...' : 'Timer Set'}
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => review(log, true)}
+                      disabled={busyId === log.id}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-500 disabled:opacity-50 transition"
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> YES
+                    </button>
+                    <button
+                      onClick={() => review(log, false)}
+                      disabled={busyId === log.id}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-500 disabled:opacity-50 transition"
+                    >
+                      <XCircle className="h-4 w-4" /> NO
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Pending outside logs (closed, review waiting) — YES / NO review */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3.5">
           <div className="flex items-center gap-2">
@@ -204,7 +340,7 @@ export default function OutsideScreen() {
         </div>
         {pendingLogs.length === 0 ? (
           <div className="px-5 py-8 text-center text-xs text-slate-500">
-            Koi outside alert nahi. Staff shop ke andar hai.
+            Koi closed outside alert nahi. Open events upar LIVE section me hain.
           </div>
         ) : (
           <div className="divide-y divide-slate-800">
@@ -214,8 +350,13 @@ export default function OutsideScreen() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-bold text-white">{log.name}</span>
                     <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-black text-rose-400">
-                      {fmtMin(log.outsideMin)} BAHAR
+                      {fmtMin(log.outsideMin || 0)} BAHAR
                     </span>
+                    {typeof log.allowedMin === 'number' && (
+                      <span className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-black text-indigo-300">
+                        TIMER: {log.allowedMin}m
+                      </span>
+                    )}
                     {(log.flags || []).map((f) => {
                       const c = flagChip(f);
                       return (
@@ -224,7 +365,7 @@ export default function OutsideScreen() {
                     })}
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-slate-400">
-                    <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{fmtDT(log.fromAt)} → {fmtDT(log.toAt)}</span>
+                    <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{fmtDT(log.fromAt)} → {log.toAt ? fmtDT(log.toAt) : 'open'}</span>
                     {typeof log.lat === 'number' && typeof log.lng === 'number' && (
                       <span className="inline-flex items-center gap-1"><RefreshCw className="h-3 w-3" />{log.lat.toFixed(4)}, {log.lng.toFixed(4)}</span>
                     )}
@@ -307,12 +448,20 @@ export default function OutsideScreen() {
               <div key={l.id} className="flex items-center justify-between px-5 py-3">
                 <div className="min-w-0 text-[12px]">
                   <span className="font-bold text-slate-200">{l.name}</span>
-                  <span className="text-slate-500"> — {fmtMin(l.outsideMin)} • {fmtDT(l.fromAt)}</span>
+                  <span className="text-slate-500"> — {fmtMin(l.outsideMin || 0)} • {fmtDT(l.fromAt)}
+                    {typeof l.allowedMin === 'number' ? ` (timer ${l.allowedMin}m)` : ''}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {l.cutApplied && (
-                    <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-black text-rose-400">
-                      CUT {l.cutPoints}
+                    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-black ${
+                      (l.cutPoints || 0) >= 0
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                    }`}>
+                      {l.cutReason === 'outside_ontime' ? 'ON-TIME'
+                        : l.cutReason === 'outside_late' ? 'LATE'
+                        : l.cutReason === 'outside_no_notice' ? 'NO NOTICE'
+                        : 'CUT'} {(l.cutPoints || 0) >= 0 ? `+${l.cutPoints}` : l.cutPoints}
                     </span>
                   )}
                   <span className={`rounded-md px-2 py-0.5 text-[10px] font-black ${

@@ -112,23 +112,30 @@ export interface LedgerEntry {
 }
 
 // OUTSIDE LOG (staff app geofence): staff shop ke radius ke bahar tha.
+// TWO-PHASE (stopwatch order 2026-10-26): 'open' = staff ABHI bahar hai
+// (live popup + stopwatch), 'pending' = closed, review/auto-process waiting.
 // Manager YES = shop ke kaam se gaya tha (koi cut nahi) | NO = rejected
-// -> staff app AUTO credit cut karta hai (-10, cutApplied atomic flag).
+// -> staff app AUTO credit cut karta hai (cutApplied atomic flag).
+// allowedMin = manager ne dashboard se "bola hua time" set kiya — close hone
+// par staff app khud compare karta hai: on-time = +5, late/bina-bataye = -10.
 export interface OutsideLog {
   id?: string;
   opId?: string;
   uid: string;
   name: string;
   fromAt: number;
-  toAt: number;
-  outsideMin: number;
+  toAt?: number;
+  outsideMin?: number;
   lat?: number;
   lng?: number;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'open' | 'pending' | 'approved' | 'rejected';
   flags?: string[]; // gps_teleport / gps_low_accuracy (integrity layer)
   createdAt: number;
+  closedAt?: number;
+  allowedMin?: number;
   cutApplied?: boolean;
   cutPoints?: number;
+  cutReason?: string; // outside_reject/approved/ontime/late/no_notice
   cutAt?: number;
   reviewedAt?: number;
   reviewedBy?: string;
