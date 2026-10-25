@@ -14,7 +14,7 @@ import { MapPinOff, TimerReset, X } from 'lucide-react';
 // dashboard tab par turant aa jata hai (real-time). Manager yahin se
 // "bola hua time" (allowed minutes) set karta hai — STOPWATCH shuru
 // (sirf dashboard se timer lag sakta hai). Wapas aane par staff app khud
-// compare karega: on-time = +5, late/bina-bataye = -10.
+// compare karega: on-time = +5, late = -4, bina-bataye = -5 (Boss 3-5 rule).
 // ============================================================
 
 const fmtElapsed = (ms: number): string => {

@@ -51,7 +51,7 @@ export default function WorkersScreen() {
         allowedSetAt: Date.now(),
         allowedSetBy: 'workers_inventory'
       });
-      showToast(`${log.name} ka stopwatch set: ${allowedMin} min (on-time = +5, late = -10 auto)`);
+      showToast(`${log.name} ka stopwatch set: ${allowedMin} min (on-time = +5, late = -4 auto)`);
     } catch (err: any) {
       showToast(`Timer set fail: ${err.message}`, 'error');
     } finally {

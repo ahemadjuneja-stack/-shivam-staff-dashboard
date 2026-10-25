@@ -117,7 +117,7 @@ export interface LedgerEntry {
 // Manager YES = shop ke kaam se gaya tha (koi cut nahi) | NO = rejected
 // -> staff app AUTO credit cut karta hai (cutApplied atomic flag).
 // allowedMin = manager ne dashboard se "bola hua time" set kiya — close hone
-// par staff app khud compare karta hai: on-time = +5, late/bina-bataye = -10.
+// par staff app khud compare karta hai: on-time = +5, late = -4, bina-bataye = -5.
 export interface OutsideLog {
   id?: string;
   opId?: string;

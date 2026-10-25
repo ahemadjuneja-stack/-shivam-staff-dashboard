@@ -27,7 +27,7 @@ import {
 // Staff app se aane wale 3 signals ka control panel:
 //   1. OUTSIDE LOGS — net band karke shop se 100m+ bahar gaya. Manager:
 //        YES  = "shop ke kaam se gaya tha" (koi cut nahi)
-//        NO   = rejected -> staff app khud -10 credit cut karta hai
+//        NO   = rejected -> staff app khud -5 credit cut karta hai (Boss 3-5 rule)
 //   2. DUTY GAPS — ON duty me app 20 min+ band tha (force-close trick).
 //      Evidence only — decision manager ka.
 //   3. DEVICE REPORT — har staff ka lastSeen/app version/sync health
@@ -128,7 +128,7 @@ export default function OutsideScreen() {
         allowedSetAt: Date.now(),
         allowedSetBy: auth.currentUser?.email || 'manager'
       });
-      setMsg(`Stopwatch set: ${log.name} ko ${allowedMin} min bola gaya — on-time wapas (+5) / late (-10) auto.`);
+      setMsg(`Stopwatch set: ${log.name} ko ${allowedMin} min bola gaya — on-time wapas (+5) / late (-4) auto.`);
       setTimeout(() => setMsg(''), 4500);
     } catch (err) {
       setMsg('Failed: ' + (err as Error).message);
@@ -146,7 +146,7 @@ export default function OutsideScreen() {
     if (!approve) {
       const ok = window.confirm(
         `NO confirm: ${log.name} ${durTxt}.\n` +
-        'Staff app will AUTO-cut credit points (taskScore -10).'
+        'Staff app will AUTO-cut credit points (taskScore -5, Boss 3-5 rule).'
       );
       if (!ok) return;
     }
@@ -336,7 +336,7 @@ export default function OutsideScreen() {
               <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-slate-950">{totalPending} NEW</span>
             )}
           </div>
-          <span className="text-[10px] font-semibold text-slate-500">NO = auto -10 credit (staff app)</span>
+          <span className="text-[10px] font-semibold text-slate-500">NO = auto -5 credit (staff app)</span>
         </div>
         {pendingLogs.length === 0 ? (
           <div className="px-5 py-8 text-center text-xs text-slate-500">
@@ -384,7 +384,7 @@ export default function OutsideScreen() {
                     disabled={busyId === log.id}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-500 disabled:opacity-50 transition"
                   >
-                    <XCircle className="h-4 w-4" /> NO (Auto -10)
+                    <XCircle className="h-4 w-4" /> NO (Auto -5)
                   </button>
                 </div>
               </div>
