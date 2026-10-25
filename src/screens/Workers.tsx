@@ -29,7 +29,9 @@ export default function WorkersScreen() {
 
   // Role Management Modal State
   const [roleModalStaff, setRoleModalStaff] = useState<UserProfile | null>(null);
-  const [targetRole, setTargetRole] = useState<UserRole>('salesman');
+  const [targetRole, setTargetRole] = useState<UserRole>('sales');
+  const [targetXlCities, setTargetXlCities] = useState<string[]>([]);
+  const [newCityInput, setNewCityInput] = useState('');
   const [savingRole, setSavingRole] = useState(false);
 
   // Toast State
@@ -126,7 +128,12 @@ export default function WorkersScreen() {
   const openRoleChangeModal = (worker: UserProfile) => {
     setRoleModalStaff(worker);
     const initialRole = (worker.role || 'none') as UserRole;
-    setTargetRole(initialRole);
+    let mappedRole: UserRole = initialRole;
+    if (initialRole === 'salesman') mappedRole = 'sales';
+    if (initialRole === 'sales_manager') mappedRole = 'manager';
+    setTargetRole(mappedRole);
+    setTargetXlCities(worker.xlCities || []);
+    setNewCityInput('');
   };
 
   // Confirm and Apply Role Update to Firestore
@@ -141,12 +148,13 @@ export default function WorkersScreen() {
       // 1. Update in Firestore
       await updateDoc(doc(db, 'users', staffUid), {
         role: targetRole,
+        xlCities: targetRole === 'sales' ? targetXlCities : [],
         roleUpdatedAt: Date.now()
       });
 
       // 2. Optimistic Row Update in local state
       setWorkers((prev) =>
-        prev.map((w) => (w.uid === staffUid ? { ...w, role: targetRole } : w))
+        prev.map((w) => (w.uid === staffUid ? { ...w, role: targetRole, xlCities: targetRole === 'sales' ? targetXlCities : [] } : w))
       );
 
       // 3. Success Toast (Exact required format)
@@ -418,6 +426,61 @@ export default function WorkersScreen() {
                 })}
               </div>
             </div>
+
+            {/* XL Cities Editor for Salesman */}
+            {targetRole === 'sales' && (
+              <div className="space-y-2 border-t border-slate-800 pt-3">
+                <label className="text-xs font-bold text-slate-300">Salesman XL Cities Permission:</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCityInput}
+                    onChange={(e) => setNewCityInput(e.target.value)}
+                    placeholder="Enter city (e.g. Patan)"
+                    className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newCityInput.trim() && !targetXlCities.includes(newCityInput.trim())) {
+                          setTargetXlCities([...targetXlCities, newCityInput.trim()]);
+                          setNewCityInput('');
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newCityInput.trim() && !targetXlCities.includes(newCityInput.trim())) {
+                        setTargetXlCities([...targetXlCities, newCityInput.trim()]);
+                        setNewCityInput('');
+                      }
+                    }}
+                    className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500 transition"
+                  >
+                    Add City
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {targetXlCities.length === 0 ? (
+                    <span className="text-[11px] text-slate-500 italic">No cities added yet. Salesman won't see any XL sheets.</span>
+                  ) : (
+                    targetXlCities.map((city, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-300 border border-blue-500/20 text-xs font-bold">
+                        {city}
+                        <button
+                          type="button"
+                          onClick={() => setTargetXlCities(targetXlCities.filter((_, i) => i !== idx))}
+                          className="text-blue-400 hover:text-rose-400 ml-1 font-bold"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Access Preview List (Detailed Breakdown) */}
             <div className="rounded-xl border border-slate-800 bg-slate-950 p-3.5 space-y-2">

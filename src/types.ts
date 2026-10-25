@@ -1,4 +1,4 @@
-export type UserRole = 'none' | 'worker' | 'sales' | 'salesman' | 'sales_manager';
+export type UserRole = 'none' | 'worker' | 'sales' | 'salesman' | 'sales_manager' | 'manager';
 export type UserStatus = 'pending' | 'active' | 'rejected';
 
 export interface UserProfile {
@@ -10,6 +10,7 @@ export interface UserProfile {
   status: UserStatus;
   createdAt: number;
   approvedAt?: number;
+  xlCities?: string[];
 }
 
 export interface ShopConfig {

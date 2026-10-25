@@ -92,6 +92,7 @@ export default function HisabXLScreen() {
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [verificationReport, setVerificationReport] = useState<HisabCheckReport | null>(null);
   const [saveFailures, setSaveFailures] = useState<string[]>([]);
+  const [overwritePrompt, setOverwritePrompt] = useState<{ monthId: string; monthLabel: string } | null>(null);
 
   // Editing cell state
   const [editingCell, setEditingCell] = useState<EditingCellState | null>(null);
@@ -264,7 +265,7 @@ export default function HisabXLScreen() {
     setUploadProgress('');
   };
 
-  const processAndUploadFile = async () => {
+  const processAndUploadFile = async (forceOverwrite = false) => {
     if (!selectedFile) {
       showToast('Kripya Excel file select karein (.xlsx ya .xls)', 'error');
       return;
@@ -370,18 +371,11 @@ export default function HisabXLScreen() {
         console.log('Hisab Check Full Mismatches:', allMismatches);
       }
 
-      // Overwrite check
+      // Overwrite check — in-app modal (window.confirm sandboxed preview me block ho jata hai)
       const existing = months.find((m) => m.monthId === monthId);
-      if (existing) {
-        const confirmOverwrite = window.confirm(
-          `Ye mahina (${monthLabel}) pehle se uploaded hai. Overwrite karein?`
-        );
-        if (!confirmOverwrite) {
-          setVerificationReport(report);
-          setShowUploadModal(false);
-          showToast('Upload CANCELLED — kuch bhi save nahi hua, purana data waise ka waisa hai', 'info');
-          return;
-        }
+      if (existing && !forceOverwrite) {
+        setOverwritePrompt({ monthId, monthLabel });
+        return;
       }
 
       setUploadProgress(`Saving ${totalSheets} sheets to Firestore...`);
@@ -1042,12 +1036,46 @@ export default function HisabXLScreen() {
               </button>
               <button
                 type="button"
-                onClick={processAndUploadFile}
+                onClick={() => processAndUploadFile(false)}
                 disabled={uploading || !selectedFile}
                 className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700 transition disabled:opacity-50"
               >
                 <Upload className="h-3.5 w-3.5" />
                 <span>{uploading ? 'Processing...' : 'Upload & Process'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overwrite Confirm Modal (in-app — sandbox-safe) */}
+      {overwritePrompt && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-amber-300 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <h3 className="text-sm font-bold text-slate-800">Mahina pehle se uploaded hai</h3>
+            </div>
+            <p className="text-xs text-slate-600">
+              <strong>{overwritePrompt.monthLabel}</strong> pehle se uploaded hai. Overwrite karne par us mahine ka purana data REPLACE ho jayega. Aage badhein?
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setOverwritePrompt(null)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOverwritePrompt(null);
+                  processAndUploadFile(true);
+                }}
+                className="rounded-xl bg-amber-600 px-5 py-2 text-xs font-bold text-white shadow hover:bg-amber-700 transition"
+              >
+                Haan, Overwrite karein
               </button>
             </div>
           </div>

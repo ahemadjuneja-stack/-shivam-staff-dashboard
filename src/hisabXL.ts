@@ -153,7 +153,7 @@ export function extractStyles(
             if (s.border[side]) {
               borderObj[side] = {
                 style: s.border[side].style,
-                color: s.border[side].color
+                color: s.border[side].color || null
               };
             }
           });

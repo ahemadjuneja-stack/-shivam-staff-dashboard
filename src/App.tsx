@@ -26,16 +26,21 @@ import WorkersScreen from './screens/Workers';
 import LiveScreen from './screens/Live';
 import HisabAdminScreen from './screens/HisabAdmin';
 import SettingsScreen from './screens/Settings';
+import StaffSpace from './screens/StaffSpace';
+import SalesmanXL from './screens/SalesmanXL';
+import { UserProfile } from './types';
 
 type NavTab = 'hisabxl' | 'approvals' | 'workers' | 'live' | 'hisab' | 'settings';
+type SessionRole = 'manager' | 'staff' | 'salesman' | null;
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [sessionRole, setSessionRole] = useState<SessionRole>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [accessDenied, setAccessDenied] = useState<boolean>(false);
 
-  // Navigation state - Hisab XL is the default tab shown after admin login
+  // Navigation state - Hisab XL is the default tab shown after manager/admin login
   const [activeTab, setActiveTab] = useState<NavTab>('hisabxl');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -54,24 +59,63 @@ export default function App() {
           const adminDoc = await getDoc(doc(db, 'admins', user.uid));
           if (adminDoc.exists()) {
             setCurrentUser(user);
-            setIsAdmin(true);
+            setSessionRole('manager');
+            setUserProfile(null);
             setAccessDenied(false);
           } else {
-            // Hard Admin Gate: Immediate signOut + hard block
-            await signOut(auth);
-            setCurrentUser(null);
-            setIsAdmin(false);
-            setAccessDenied(true);
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            if (userDoc.exists()) {
+              const profile = { uid: userDoc.id, ...(userDoc.data() as Omit<UserProfile, 'uid'>) };
+              if (profile.status === 'active') {
+                const role = (profile.role || '').toLowerCase();
+                if (role === 'manager' || role === 'sales_manager') {
+                  setCurrentUser(user);
+                  setSessionRole('manager');
+                  setUserProfile(profile);
+                  setAccessDenied(false);
+                } else if (role === 'worker') {
+                  setCurrentUser(user);
+                  setSessionRole('staff');
+                  setUserProfile(profile);
+                  setAccessDenied(false);
+                } else if (role === 'sales' || role === 'salesman') {
+                  setCurrentUser(user);
+                  setSessionRole('salesman');
+                  setUserProfile(profile);
+                  setAccessDenied(false);
+                } else {
+                  await signOut(auth);
+                  setCurrentUser(null);
+                  setSessionRole(null);
+                  setUserProfile(null);
+                  setAccessDenied(true);
+                }
+              } else {
+                await signOut(auth);
+                setCurrentUser(null);
+                setSessionRole(null);
+                setUserProfile(null);
+                setAccessDenied(true);
+              }
+            } else {
+              await signOut(auth);
+              setCurrentUser(null);
+              setSessionRole(null);
+              setUserProfile(null);
+              setAccessDenied(true);
+            }
           }
         } catch {
           await signOut(auth);
           setCurrentUser(null);
-          setIsAdmin(false);
+          setSessionRole(null);
+          setUserProfile(null);
           setAccessDenied(true);
         }
       } else {
         setCurrentUser(null);
-        setIsAdmin(false);
+        setSessionRole(null);
+        setUserProfile(null);
       }
       setLoading(false);
     });
@@ -80,7 +124,7 @@ export default function App() {
 
   // Real-time pending approvals count badge for sidebar
   useEffect(() => {
-    if (!currentUser || !isAdmin) return;
+    if (!currentUser || sessionRole !== 'manager') return;
     const unsub = onSnapshot(
       query(collection(db, 'users'), where('status', '==', 'pending')),
       (snap) => {
@@ -91,7 +135,7 @@ export default function App() {
       }
     );
     return () => unsub();
-  }, [currentUser, isAdmin]);
+  }, [currentUser, sessionRole]);
 
   const handleLogout = async () => {
     try {
@@ -100,7 +144,8 @@ export default function App() {
       console.warn('Sign out error:', e);
     } finally {
       setCurrentUser(null);
-      setIsAdmin(false);
+      setSessionRole(null);
+      setUserProfile(null);
       setAccessDenied(false);
     }
   };
@@ -113,15 +158,51 @@ export default function App() {
 
     try {
       const res = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const adminDoc = await getDoc(doc(db, 'admins', res.user.uid));
+      const user = res.user;
+      const adminDoc = await getDoc(doc(db, 'admins', user.uid));
       if (adminDoc.exists()) {
-        setCurrentUser(res.user);
-        setIsAdmin(true);
+        setCurrentUser(user);
+        setSessionRole('manager');
+        setUserProfile(null);
       } else {
-        await signOut(auth);
-        setCurrentUser(null);
-        setIsAdmin(false);
-        setAccessDenied(true);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          const profile = { uid: userDoc.id, ...(userDoc.data() as Omit<UserProfile, 'uid'>) };
+          if (profile.status === 'active') {
+            const role = (profile.role || '').toLowerCase();
+            if (role === 'manager' || role === 'sales_manager') {
+              setCurrentUser(user);
+              setSessionRole('manager');
+              setUserProfile(profile);
+            } else if (role === 'worker') {
+              setCurrentUser(user);
+              setSessionRole('staff');
+              setUserProfile(profile);
+            } else if (role === 'sales' || role === 'salesman') {
+              setCurrentUser(user);
+              setSessionRole('salesman');
+              setUserProfile(profile);
+            } else {
+              await signOut(auth);
+              setCurrentUser(null);
+              setSessionRole(null);
+              setUserProfile(null);
+              setAccessDenied(true);
+            }
+          } else {
+            await signOut(auth);
+            setCurrentUser(null);
+            setSessionRole(null);
+            setUserProfile(null);
+            setAccessDenied(true);
+          }
+        } else {
+          await signOut(auth);
+          setCurrentUser(null);
+          setSessionRole(null);
+          setUserProfile(null);
+          setAccessDenied(true);
+        }
       }
     } catch (err: unknown) {
       const error = err as Error;
@@ -131,19 +212,19 @@ export default function App() {
     }
   };
 
-  // 1. Loading State: Full screen loader during auth/admin check
+  // 1. Loading State: Full screen loader during auth/session check
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-200">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
-          <p className="text-sm font-semibold tracking-wide text-slate-400">Verifying Admin Credentials...</p>
+          <p className="text-sm font-semibold tracking-wide text-slate-400">Verifying Credentials...</p>
         </div>
       </div>
     );
   }
 
-  // 2. Hard Admin Gate: Access Denied Standalone Screen for Non-Admins
+  // 2. Hard Access Denied Standalone Screen
   if (accessDenied) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
@@ -153,7 +234,7 @@ export default function App() {
           </div>
           <h2 className="text-xl font-bold text-white">Access Denied</h2>
           <p className="text-xs text-rose-300 bg-rose-500/10 p-3.5 rounded-xl border border-rose-500/20 font-medium">
-            Ye account admin nahi hai. Aap sign out kar diye gaye hain.
+            Ye account active nahi hai ya authorized nahi hai. Aap sign out kar diye gaye hain.
           </p>
           <button
             type="button"
@@ -167,15 +248,15 @@ export default function App() {
     );
   }
 
-  // 3. Unauthenticated Owner Login Screen
-  if (!currentUser || !isAdmin) {
+  // 3. Unauthenticated Login Screen
+  if (!currentUser || !sessionRole) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
         <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/90 p-8 shadow-2xl backdrop-blur">
           <div className="mb-6 text-center">
             <h1 className="text-2xl font-black tracking-wider text-white">SHIVAM STAFF</h1>
             <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-indigo-400">
-              Owner PC Admin Dashboard
+              Shivam Dashboard
             </p>
           </div>
 
@@ -187,13 +268,13 @@ export default function App() {
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
-              <label className="text-xs font-semibold text-slate-400">Owner Email</label>
+              <label className="text-xs font-semibold text-slate-400">Email Address</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="owner@shivam.com"
+                placeholder="staff@shivam.com"
                 className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
               />
             </div>
@@ -219,7 +300,7 @@ export default function App() {
             </button>
 
             <p className="mt-4 text-center text-xs text-slate-500 font-medium">
-              Owner account Firebase Console se manage hota hai. Naye admin ke liye apne developer se sampark karein.
+              Staff accounts are managed by admin from Staff Management.
             </p>
           </form>
         </div>
@@ -227,7 +308,29 @@ export default function App() {
     );
   }
 
-  // 4. Navigation Menu Config (Hisab XL is FIRST tab)
+  // 4. Role-based Routing: Staff View ("My Space")
+  if (sessionRole === 'staff') {
+    return (
+      <StaffSpace
+        currentUser={currentUser}
+        userProfile={userProfile}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // 5. Role-based Routing: Salesman View ("XL")
+  if (sessionRole === 'salesman') {
+    return (
+      <SalesmanXL
+        currentUser={currentUser}
+        userProfile={userProfile}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // 6. Role-based Routing: Manager / Owner Full Dashboard
   const navItems = [
     {
       id: 'hisabxl' as NavTab,
@@ -305,7 +408,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-black tracking-wider text-white">SHIVAM STAFF</h1>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Owner Dashboard</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Manager Dashboard</p>
             </div>
           </div>
           <button
@@ -351,9 +454,9 @@ export default function App() {
         <div className="border-t border-slate-800 p-4 bg-slate-900">
           <div className="flex items-center justify-between">
             <div className="truncate">
-              <p className="text-xs font-bold text-white truncate">{currentUser.email}</p>
-              <p className="text-[10px] font-bold text-emerald-400">
-                ADMIN VERIFIED
+              <p className="text-xs font-bold text-white truncate">{userProfile?.name || currentUser.email}</p>
+              <p className="text-[10px] font-bold text-purple-400">
+                MANAGER VERIFIED
               </p>
             </div>
             <button

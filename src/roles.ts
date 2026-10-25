@@ -11,45 +11,40 @@ export interface RoleDefinition {
 
 export const ROLES: RoleDefinition[] = [
   {
-    value: 'salesman',
-    label: 'Salesman',
-    badgeClass: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
-    dotColor: 'bg-blue-500',
-    description: 'Field sales, customer balance check, cash/UPI collection & entries',
+    value: 'manager',
+    label: 'Manager',
+    badgeClass: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
+    dotColor: 'bg-purple-500',
+    description: 'Full dashboard access & staff management',
     permissions: [
-      'Customer Directory & live balances access',
-      'Daily Jama / Kharcha collection entries (Cash/UPI/Cheque)',
-      'Assigned Miracle Sheets & customer accounts access',
-      'Customer bill history access',
-      'Daily duty geofence attendance & work logs'
+      'Full Admin Dashboard access',
+      'Staff management & verifications',
+      'Hisab XL & sheets control',
+      'All live attendance & settings'
     ]
   },
   {
-    value: 'sales_manager',
-    label: 'Sales Manager',
-    badgeClass: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
-    dotColor: 'bg-purple-500',
-    description: 'Full sales module + customer oversight + sheets management',
+    value: 'sales',
+    label: 'Salesman',
+    badgeClass: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+    dotColor: 'bg-blue-500',
+    description: 'City-wise active XL sheets access',
     permissions: [
-      'All Salesman permissions included',
-      'All cities Miracle sheets & accounts oversight',
-      'Naye customers add karna & balances manage karna',
-      'Miracle bills & collection entries oversight',
-      'Team live collection monitoring & reporting',
-      'Daily duty geofence attendance & work logs'
+      'Assigned city Miracle sheets & XL access',
+      'Customer Directory & live balances access',
+      'Daily Jama / Kharcha collection entries'
     ]
   },
   {
     value: 'worker',
-    label: 'Worker',
+    label: 'Staff',
     badgeClass: 'bg-slate-800 text-slate-300 border border-slate-700',
     dotColor: 'bg-slate-400',
-    description: 'Shop duty, geofence attendance, work logs & operations',
+    description: 'My Space: Tasks, Credit Score, Time & Duty',
     permissions: [
-      'Duty Geofence punch in / punch out',
-      'Daily work log submission',
-      'Star rating performance & incentives',
-      'Shop basic duty operations'
+      'My Space Tasks & Credit Score',
+      'Time & Duty punch in / out',
+      'Daily work log submission'
     ]
   },
   {
@@ -60,18 +55,17 @@ export const ROLES: RoleDefinition[] = [
     description: 'Koi special module access nahi',
     permissions: [
       'Basic profile view only',
-      'Sales module (sheets/customers/entries/bills) completely BLOCKED',
-      'No operational access'
+      'No dashboard or operational access'
     ]
   }
 ];
 
 export function getRoleDefinition(role?: string | null): RoleDefinition {
   const normalized = (role || '').toLowerCase();
-  if (normalized === 'salesman' || normalized === 'sales') {
+  if (normalized === 'manager' || normalized === 'sales_manager') {
     return ROLES[0];
   }
-  if (normalized === 'sales_manager' || normalized === 'manager') {
+  if (normalized === 'sales' || normalized === 'salesman') {
     return ROLES[1];
   }
   if (normalized === 'worker') {
@@ -82,10 +76,10 @@ export function getRoleDefinition(role?: string | null): RoleDefinition {
 
 export function hasSalesAccess(role?: string | null): boolean {
   const normalized = (role || '').toLowerCase();
-  return normalized === 'salesman' || normalized === 'sales_manager' || normalized === 'sales';
+  return normalized === 'salesman' || normalized === 'sales_manager' || normalized === 'sales' || normalized === 'manager';
 }
 
 export function isSalesManager(role?: string | null): boolean {
   const normalized = (role || '').toLowerCase();
-  return normalized === 'sales_manager';
+  return normalized === 'sales_manager' || normalized === 'manager';
 }
