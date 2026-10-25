@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
+import { SHOP_CENTER_LOCKED } from '../shopLocation';
 import { useMyRole } from '../useMyRole';
 import {
   ShopConfig,
@@ -282,10 +283,10 @@ export default function StaffApp({ onBackToDashboard, isBossPreview, previewUid 
         const lng = pos.coords.longitude;
         setMyLat(lat);
         setMyLng(lng);
-        if (shopConfig && shopConfig.lat && shopConfig.lng) {
-          const d = calculateDistance(lat, lng, shopConfig.lat, shopConfig.lng);
-          setDistM(d);
-        }
+        // BOSS-LOCKED CENTER (2026-10-26): distance hamesha Boss ke exact
+        // shop coords se — config.lat/lng ignore ("Aur koi nahi dena")
+        const d = calculateDistance(lat, lng, SHOP_CENTER_LOCKED.lat, SHOP_CENTER_LOCKED.lng);
+        setDistM(d);
         setLocating(false);
         showFeedback('Live GPS location capture ho gayi!', 'success');
       },
@@ -529,7 +530,7 @@ export default function StaffApp({ onBackToDashboard, isBossPreview, previewUid 
               </div>
 
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs space-y-1 text-slate-400">
-                <p>Shop: <strong className="text-slate-200">{shopConfig?.name || 'SHIVAM'}</strong> (Allowed Radius: {shopConfig?.radius || 100}m)</p>
+                <p>Shop: <strong className="text-slate-200">{shopConfig?.name || 'SHIVAM'}</strong> (Allowed Radius: {shopConfig?.radius || 100}m) — <span className="text-indigo-300">Location Boss-locked: {SHOP_CENTER_LOCKED.lat.toFixed(5)}, {SHOP_CENTER_LOCKED.lng.toFixed(5)}</span></p>
                 <p>
                   Current GPS:{' '}
                   {myLat !== null && myLng !== null ? (

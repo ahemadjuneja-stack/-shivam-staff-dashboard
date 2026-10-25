@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { doc, getDoc, setDoc, getDocs, collection } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from '../firebase';
+import { SHOP_CENTER_LOCKED, SHOP_ADDRESS_LOCKED } from '../shopLocation';
 import { ShopConfig } from '../types';
 
 interface SettingsProps {
@@ -10,8 +11,6 @@ interface SettingsProps {
 
 export default function SettingsScreen({ currentUser }: SettingsProps) {
   const [shopName, setShopName] = useState('SHIVAM');
-  const [lat, setLat] = useState<number>(0);
-  const [lng, setLng] = useState<number>(0);
   const [radius, setRadius] = useState<number>(100);
   const [shiftStart, setShiftStart] = useState('09:00');
   const [loading, setLoading] = useState(false);
@@ -27,8 +26,6 @@ export default function SettingsScreen({ currentUser }: SettingsProps) {
       if (snap.exists()) {
         const data = snap.data() as ShopConfig;
         setShopName(data.name || 'SHIVAM');
-        setLat(data.lat || 0);
-        setLng(data.lng || 0);
         setRadius(data.radius || 100);
         setShiftStart(data.shiftStart || '09:00');
       }
@@ -36,35 +33,21 @@ export default function SettingsScreen({ currentUser }: SettingsProps) {
     fetchConfig();
   }, []);
 
-  const handleCaptureCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setMsg('Browser geolocation not supported.');
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(pos.coords.latitude);
-        setLng(pos.coords.longitude);
-        setMsg('Dukaan ki live GPS location capture ho gayi!');
-      },
-      (err) => setMsg(`GPS Error: ${err.message}`),
-      { enableHighAccuracy: true }
-    );
-  };
-
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMsg('');
     try {
+      // BOSS-LOCKED CENTER: lat/lng hamesha Boss ke exact shop coords —
+      // inputs se koi aur location aa hi nahi sakti ("Aur koi nahi dena")
       await setDoc(doc(db, 'config', 'shop'), {
         name: shopName,
-        lat,
-        lng,
+        lat: SHOP_CENTER_LOCKED.lat,
+        lng: SHOP_CENTER_LOCKED.lng,
         radius: Number(radius),
         shiftStart
       });
-      setMsg('Shop Geofence & Duty settings update ho gayi!');
+      setMsg('Shop settings update ho gayi! (Location Boss-locked — sirf radius/shift change hota hai)');
     } catch (err: unknown) {
       const error = err as Error;
       setMsg(`Error: ${error.message}`);
@@ -127,7 +110,7 @@ export default function SettingsScreen({ currentUser }: SettingsProps) {
 
       {/* Geofence Form */}
       <form onSubmit={handleSaveConfig} className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-lg space-y-4">
-        <h3 className="text-sm font-bold text-white">Shop Geofence &amp; Duty Timings</h3>
+        <h3 className="text-sm font-bold text-white">Shop Radius &amp; Duty Timings</h3>
 
         <div>
           <label className="text-xs text-slate-400">Shop Name (Locked Brand)</label>
@@ -139,36 +122,14 @@ export default function SettingsScreen({ currentUser }: SettingsProps) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-slate-400">Latitude</label>
-            <input
-              type="number"
-              step="any"
-              value={lat}
-              onChange={(e) => setLat(parseFloat(e.target.value))}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 p-2.5 text-xs text-white"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-slate-400">Longitude</label>
-            <input
-              type="number"
-              step="any"
-              value={lng}
-              onChange={(e) => setLng(parseFloat(e.target.value))}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-800 p-2.5 text-xs text-white"
-            />
-          </div>
+        {/* BOSS-LOCKED LOCATION (2026-10-26) — "Hamare shop ka exect location
+            ye hai... Aur koi nahi dena" — center permanent, inputs removed */}
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1">
+          <p className="text-xs font-bold text-emerald-300">Shop Location BOSS-LOCKED</p>
+          <p className="text-xs text-slate-300">{SHOP_ADDRESS_LOCKED}</p>
+          <p className="text-xs font-mono text-emerald-400">Lat {SHOP_CENTER_LOCKED.lat}, Lng {SHOP_CENTER_LOCKED.lng}</p>
+          <p className="text-[11px] text-slate-400">Ye exact Google Maps location Boss ne di hai — koi aur location configurable nahi hai. Staff app geofence isi center se chalega.</p>
         </div>
-
-        <button
-          type="button"
-          onClick={handleCaptureCurrentLocation}
-          className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700"
-        >
-          📍 Dukaan me baith kar Live Location Capture Karein
-        </button>
 
         <div className="grid grid-cols-2 gap-3 pt-2">
           <div>
