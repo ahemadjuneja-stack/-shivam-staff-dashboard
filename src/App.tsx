@@ -35,6 +35,7 @@ import ToursScreen from './screens/Tours';
 import CounterBookScreen from './screens/CounterBook';
 import TourHisabScreen from './screens/TourHisab';
 import { UserProfile } from './types';
+import { initOutboxEngine } from './lib/outbox';
 import ShivamLogo from './components/ShivamLogo';
 
 type NavTab = 'hisabxl' | 'counter' | 'tour' | 'workers' | 'tours' | 'live' | 'outside' | 'hisab' | 'settings';
@@ -88,6 +89,12 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    // OFFLINE-FIRST ENGINE (Boss order 2026-10-27): outbox flush — net aane
+    // par journal writes Firestore par, online event + 90s loop + mount flush
+    initOutboxEngine();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {

@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyAziP_2HxsFH7RXeo5RNq8qvaawMamnYAQ",
@@ -14,4 +14,19 @@ export const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// OFFLINE-FIRST (Boss order 2026-10-27: "internet naa ho aur dashboard khula
+// ho tab bhi wo kaam kare net aane par wapis Firestore par data bhej de"):
+// persistentLocalCache = IndexedDB disk cache — offline READS cache se milte
+// hai, WRITES SDK queue me durable (browser refresh par bhi safe), net aane
+// par SDK khud sync karta hai. Multi-tab manager = ek se zyada dashboard tab
+// chale to bhi cache conflict-free. Fallback: unsupported browser par default.
+let dbInst: ReturnType<typeof getFirestore>;
+try {
+  dbInst = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+} catch {
+  dbInst = getFirestore(app);
+}
+export const db = dbInst;

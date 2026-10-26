@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, deleteDoc, doc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, getDocs, query, where } from 'firebase/firestore';
 import {
   Upload, Download, FileSpreadsheet, CheckCircle2, AlertTriangle, Trash2,
   ChevronDown, ChevronRight, Truck, Calculator, X, RefreshCw
 } from 'lucide-react';
 import { db, auth } from '../firebase';
+import { obSet, obDel, OutboxBanner } from '../lib/outbox';
 import { ThRoute, ThParty, ThBill, ThUpload } from '../types';
 import { fmtRs, parseRsInput, cellToPaise, todayStr } from '../lib/cbMoney';
 import * as XLSX from 'xlsx';
@@ -318,18 +319,19 @@ export default function TourHisabScreen() {
         kind: 'th-upload', month, fileName: preview.fileName, uploadedBy: who(), uploadedAt: Date.now(),
         routes: clean, checks: { ok: liveIssues.length === 0, issues: liveIssues }
       };
-      await setDoc(doc(db, 'hisab', id), JSON.parse(JSON.stringify(docu)));
+      // OUTBOX journal-first (offline-safe — Boss order 2026-10-27)
+      await obSet('hisab', id, JSON.parse(JSON.stringify(docu)) as Record<string, unknown>, { merge: false, opId: `th-save-${id}` });
       setPreview(null);
       setBusy('');
       setSelected(Date.now().toString());
       await loadUploads();
-      say('ok', 'Upload saved — settlement view ready');
+      say('ok', 'Upload saved — settlement view ready' + (navigator.onLine ? '' : ' (offline — net aane par sync)'));
     } catch (e) { setBusy(''); say('err', 'Save failed: ' + (e as Error).message); }
   };
 
   const delUpload = async (id: string) => {
     if (!window.confirm('Delete this tour upload permanently?')) return;
-    try { await deleteDoc(doc(db, 'hisab', `th-${id}`)); setSelected(''); await loadUploads(); say('ok', 'Upload deleted'); }
+    try { await obDel('hisab', `th-${id}`); setSelected(''); await loadUploads(); say('ok', 'Upload deleted'); }
     catch (e) { say('err', 'Delete failed: ' + (e as Error).message); }
   };
 
@@ -369,6 +371,7 @@ export default function TourHisabScreen() {
 
   return (
     <div className="space-y-5">
+      <OutboxBanner />
       {/* header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
         <div>

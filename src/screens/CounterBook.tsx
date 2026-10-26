@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { doc, getDoc, getDocs, setDoc, updateDoc, collection, query, where } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import {
   Wallet, Plus, Trash2, Lock, Unlock, Download, ChevronLeft, ChevronRight,
   Calculator, Package, BellRing, ScrollText, CheckCircle2, AlertTriangle,
   X, Landmark, ShoppingBag, Receipt, Banknote, CalendarDays
 } from 'lucide-react';
 import { db, auth } from '../firebase';
+import { obSet, OutboxBanner } from '../lib/outbox';
 import {
   CbDay, CbEntry, CbEntryType, CbSettings, CbAuditRec, CbParcelMode, CbCategory, CbUdhariMode
 } from '../types';
@@ -67,6 +68,9 @@ export default function CounterBookScreen() {
   };
 
   // ---- settings (create defaults on first ever use — fresh start 2000+2000) ----
+  // OFFLINE-SAFE (Boss order 2026-10-27): net na ho to LOCAL defaults se kaam
+  // (koi blind write nahi — server settings overwrite risk ZERO). First-ever
+  // create sirf jab getDoc ne positively bataya ki doc hi nahi hai.
   useEffect(() => {
     (async () => {
       try {
@@ -76,12 +80,14 @@ export default function CounterBookScreen() {
           setSettings(snap.data() as CbSettings);
         } else {
           const def: CbSettings = { kind: 'cb-settings', openingP1: 200000, openingP2: 200000, minCounterP: 200000 };
-          await setDoc(ref, def);
+          await obSet('hisab', SETTINGS_ID, { ...def }, { merge: true, opId: 'cb-settings-init' });
           await logAudit('settings', 'Counter Book first-time init: opening 200 + 200 (chart), min counter 200');
           setSettings(def);
         }
-      } catch (e) {
-        say('err', 'Settings load failed: ' + (e as Error).message);
+      } catch {
+        // OFFLINE: getDoc unavailable — LOCAL defaults (deterministic 200+200),
+        // write skip (overwrite-safe). Net aane par reload par sync ho jayega.
+        setSettings({ kind: 'cb-settings', openingP1: 200000, openingP2: 200000, minCounterP: 200000 });
       }
     })();
   }, []);
@@ -89,7 +95,7 @@ export default function CounterBookScreen() {
   const logAudit = async (action: CbAuditRec['action'], detail: string) => {
     try {
       const rec: CbAuditRec = { kind: 'cb-audit', at: Date.now(), by: who(), action, detail };
-      await setDoc(doc(db, 'hisab', `cb-audit-${Date.now()}-${Math.floor(Math.random() * 1e6)}`), rec);
+      await obSet('hisab', `cb-audit-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, { ...rec });
     } catch { /* audit is best-effort; never block money ops */ }
   };
 
@@ -106,11 +112,14 @@ export default function CounterBookScreen() {
   useEffect(() => { if (view === 'audit') loadAudit(); }, [view]);
 
   // ---- load (or lazily create) the day doc ----
+  // OFFLINE-SAFE: getDoc unavailable (never-cached doc + net off) -> null ->
+  // create flow chalta hai (cached day-list se carry, warna opening defaults).
+  // Day doc create deterministic id (cb-YYYY-MM-DD) + opId = replay-safe.
   const loadDay = async (d: string) => {
     setLoading(true);
     try {
-      const snap = await getDoc(doc(db, 'hisab', dayId(d)));
-      if (snap.exists()) { setDay(snap.data() as CbDay); setLoading(false); return; }
+      const snap = await getDoc(doc(db, 'hisab', dayId(d))).catch(() => null); // offline/unavailable = null
+      if (snap && snap.exists()) { setDay(snap.data() as CbDay); setLoading(false); return; }
       // create with carry from last locked day (or fresh opening)
       if (ensuring.current === d) return;
       ensuring.current = d;
@@ -135,7 +144,7 @@ export default function CounterBookScreen() {
         }
       } catch { /* fall back to opening */ }
       const fresh: CbDay = { kind: 'cb-day', date: d, status: 'open', carryP1, carryP2, carryNote: note, entries: [], createdAt: Date.now() };
-      await setDoc(doc(db, 'hisab', dayId(d)), fresh);
+      await obSet('hisab', dayId(d), { ...fresh }, { merge: true, opId: `cb-day-create-${d}` });
       setDay(fresh);
     } catch (e) {
       say('err', 'Load failed: ' + (e as Error).message);
@@ -165,11 +174,13 @@ export default function CounterBookScreen() {
       }
     }
     try {
-      await updateDoc(doc(db, 'hisab', dayId(date)), { entries: [...(day.entries || []), e] });
+      // OUTBOX journal-first (offline-safe) — entries field merge, local view
+      // turant update (Firestore SDK offline mutations cache me reflect hote hai)
+      await obSet('hisab', dayId(date), { entries: [...(day.entries || []), e] });
       const label = e.type === 'cashSale' ? 'cash sale' : e.type === 'udhari' ? `udhari ${e.mode} ${e.name || ''}` : e.type === 'deposit' ? 'office deposit' : e.type === 'expense' ? `expense ${e.head || ''}` : e.type === 'parcel' ? `parcel ${e.mode} ${e.name || ''}` : `haste ${e.name || ''}`;
       await logAudit('add', `D${e.dept} ${label} ${fmtChart(e.amtP)} (${date})`);
       setForm(null);
-      say('ok', 'Entry added');
+      say('ok', 'Entry added' + (navigator.onLine ? '' : ' (offline — net aane par sync)'));
       await loadDay(date);
     } catch (err) { say('err', 'Save failed: ' + (err as Error).message); }
   };
@@ -180,7 +191,7 @@ export default function CounterBookScreen() {
     if (!e) return;
     if (e.type === 'deposit' && !window.confirm('Delete this office deposit entry?')) return;
     try {
-      await updateDoc(doc(db, 'hisab', dayId(date)), { entries: (day.entries || []).filter((x) => x.id !== id) });
+      await obSet('hisab', dayId(date), { entries: (day.entries || []).filter((x) => x.id !== id) });
       await logAudit('delete', `D${e.dept} ${e.type} ${fmtChart(e.amtP)} removed (${date})`);
       say('ok', 'Entry removed');
       await loadDay(date);
@@ -191,7 +202,7 @@ export default function CounterBookScreen() {
     if (!day || locked) return;
     const entries = (day.entries || []).map((x) => (x.id === id ? { ...x, status: x.status === 'done' ? 'pending' : 'done' } : x));
     try {
-      await updateDoc(doc(db, 'hisab', dayId(date)), { entries });
+      await obSet('hisab', dayId(date), { entries });
       await loadDay(date);
     } catch (err) { say('err', 'Update failed: ' + (err as Error).message); }
   };
@@ -206,13 +217,13 @@ export default function CounterBookScreen() {
       d1DiffP: g1P === null ? 0 : g1P - t1.counterP, d2DiffP: g2P === null ? 0 : g2P - t2.counterP
     };
     try {
-      await updateDoc(doc(db, 'hisab', dayId(date)), {
+      await obSet('hisab', dayId(date), {
         status: 'locked', lockedAt: Date.now(), lockedBy: who(),
         closeTotals: ct,
         ...(g1P !== null || g2P !== null ? { gini: { d1P: g1P ?? t1.counterP, d2P: g2P ?? t2.counterP, at: Date.now(), by: who() } } : {})
       });
       await logAudit('lock', `Day ${date} locked. Expected ${fmtChart(t1.counterP)}/${fmtChart(t2.counterP)}, next carry ${fmtChart(ct.nextCarryP1)}/${fmtChart(ct.nextCarryP2)}`);
-      say('ok', 'Day closed & locked — carry-forward set');
+      say('ok', 'Day closed & locked — carry-forward set' + (navigator.onLine ? '' : ' (offline — net aane par sync)'));
       setShowClose(false);
       await loadDay(date);
     } catch (err) { say('err', 'Lock failed: ' + (err as Error).message); }
@@ -222,7 +233,7 @@ export default function CounterBookScreen() {
     if (!day) return;
     if (!window.confirm('Unlock this day? Entries will be editable again (recorded in audit log).')) return;
     try {
-      await updateDoc(doc(db, 'hisab', dayId(date)), { status: 'open', lockedAt: null, lockedBy: null });
+      await obSet('hisab', dayId(date), { status: 'open', lockedAt: null, lockedBy: null });
       await logAudit('unlock', `Day ${date} UNLOCKED by ${who()}`);
       say('ok', 'Day unlocked');
       await loadDay(date);
@@ -280,6 +291,7 @@ export default function CounterBookScreen() {
   // ================= render =================
   return (
     <div className="space-y-5">
+      <OutboxBanner />
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
         <div>
