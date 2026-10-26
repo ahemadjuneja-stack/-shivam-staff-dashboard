@@ -17,6 +17,7 @@ import { UserProfile, WorkLog, StarEvent, UserRole, OutsideLog } from '../types'
 import { ROLES, getRoleDefinition } from '../roles';
 import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer, UserPlus, Pencil, Trash2, UserCheck } from 'lucide-react';
 import StaffApp from './StaffApp';
+import LocationIntel from '../components/LocationIntel';
 import { registerStaff, updateStaffDetails, changeStaffPin, deleteStaff } from '../staffAdmin';
 
 // BOSS Task 52 (2026-10-26): credit scale 1-300 — display "125/300".
@@ -889,6 +890,12 @@ export default function WorkersScreen() {
                       <p className="sm:col-span-2 font-mono text-[10px] text-slate-500 break-all">UID: {detailStaff.uid}</p>
                     </div>
                   </div>
+
+                  {/* LOCATION INTELLIGENCE (Boss order 2026-10-26): device inventory
+                      (mobile model/os/app/net/last seen/last location) + sales road
+                      map (loc_sessions points) + location ON/OFF history (loc_events)
+                      — live listeners, staff app v1.0.0-65+ se data aata hai */}
+                  <LocationIntel uid={detailStaff.uid} name={detailStaff.name} isSales={detailStaff.role === 'sales'} />
 
                   {/* CREDIT HISTORY (Boss Task 51): kon se kaam se points up/down hue */}
                   <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
