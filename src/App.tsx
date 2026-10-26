@@ -469,7 +469,7 @@ export default function App() {
           - Left-edge floating button (Android popup style) se kisi bhi screen par wapas bahar */}
       <aside
         className={` ${
-          isHome ? 'static' : 'fixed inset-y-0 left-0 z-50'
+          isHome ? 'relative z-50' : 'fixed inset-y-0 left-0 z-50'
         } w-20 shrink-0 flex flex-col border-r border-slate-800 bg-slate-900/95 backdrop-blur transition-transform duration-300 ${
           isHome ? 'translate-x-0' : drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
@@ -581,7 +581,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Screen Content */}
-        <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-6 w-full">
           {renderContent()}
         </main>
       </div>

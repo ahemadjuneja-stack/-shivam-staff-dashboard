@@ -1,11 +1,14 @@
 @import "tailwindcss";
 
 body { overflow-x: hidden; }
+/* Fullbleed = content wrapper ke END-TO-END (rail edge se viewport right tak).
+   PURANA 100vw viewport hack HATAYA — wo HisabXL home par slim rail ke UPAR
+   paint ho jata tha (Boss bug: "sidebar hide ho gaya"). Ab margin-based escape:
+   main ke p-6 (1.5rem) dono taraf escape -> wrapper ki poori width, no overlap. */
 .hisab-fullbleed {
-  width: 100vw;
-  position: relative;
-  left: 50%;
-  margin-left: -50vw;
+  width: calc(100% + 3rem);
+  margin-left: -1.5rem;
+  margin-right: -1.5rem;
 }
 
 /* ===== SHIVAM BRAND (official look — staff app jaisa) ===== */
