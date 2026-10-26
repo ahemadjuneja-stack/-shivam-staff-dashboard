@@ -14,6 +14,28 @@ export interface UserProfile {
   approvedAt?: number;
   xlCities?: string[];
   pin?: string; // login PIN on file (dashboard registration/PIN reset ke liye)
+  photo?: string; // PROFILE DP (Boss order 2026-10-27) — staff app se compressed JPEG dataURL
+}
+
+// LINE SCHEDULE (Boss order 2026-10-27): salesman tour plan — kis date kis
+// city. Dashboard Tours page XL upload / monthly builder se banata hai,
+// staff app me salesman khud bhi likh/edit kar sakta hai. Verification:
+// us date ki loc_sessions GPS points city coords se match -> green/red.
+export interface ScheduleEntry {
+  id?: string;
+  uid: string;
+  name: string;
+  phone?: string;
+  date: string; // 'YYYY-MM-DD'
+  city: string;
+  cityKey: string;
+  month: string; // 'YYYY-MM'
+  source: 'self' | 'dashboard';
+  createdBy?: string;
+  createdAt: number;
+  updatedAt?: number;
+  cityLat?: number;
+  cityLng?: number;
 }
 
 export interface ShopConfig {

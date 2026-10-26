@@ -16,7 +16,8 @@ import {
   ChevronsRight,
   LogOut,
   ShieldAlert,
-  MapPinOff
+  MapPinOff,
+  Route
 } from 'lucide-react';
 
 import HisabXLScreen from './HisabXL';
@@ -28,16 +29,17 @@ import OutsideScreen from './screens/Outside';
 import OutsideAlertPopup from './OutsidePopup';
 import StaffSpace from './screens/StaffSpace';
 import SalesmanXL from './screens/SalesmanXL';
+import ToursScreen from './screens/Tours';
 import { UserProfile } from './types';
 import ShivamLogo from './components/ShivamLogo';
 
-type NavTab = 'hisabxl' | 'workers' | 'live' | 'outside' | 'hisab' | 'settings';
+type NavTab = 'hisabxl' | 'workers' | 'tours' | 'live' | 'outside' | 'hisab' | 'settings';
 type SessionRole = 'manager' | 'staff' | 'salesman' | null;
 
 // Tab persistence — Boss order: refresh par jis page par tha wahi page khule,
 // home par redirect NAHI. Last active tab localStorage me save hota hai.
 const TAB_PERSIST_KEY = 'shivam-dash-active-tab';
-const VALID_TABS: NavTab[] = ['hisabxl', 'workers', 'live', 'outside', 'hisab', 'settings'];
+const VALID_TABS: NavTab[] = ['hisabxl', 'workers', 'tours', 'live', 'outside', 'hisab', 'settings'];
 
 // Bade sidebar icon tiles — Boss order: har nav item ka apna colored logo block,
 // upar se niche tak pure panel me adjust
@@ -47,7 +49,8 @@ const TILE_STYLES: Record<string, string> = {
   amber: 'bg-amber-500/15 border-amber-500/30 text-amber-400',
   rose: 'bg-rose-500/15 border-rose-500/30 text-rose-400',
   teal: 'bg-teal-500/15 border-teal-500/30 text-teal-400',
-  purple: 'bg-purple-500/15 border-purple-500/30 text-purple-400'
+  purple: 'bg-purple-500/15 border-purple-500/30 text-purple-400',
+  fuchsia: 'bg-fuchsia-500/15 border-fuchsia-500/30 text-fuchsia-400'
 };
 
 export default function App() {
@@ -403,6 +406,12 @@ export default function App() {
       badge: pendingCount > 0 ? pendingCount : null
     },
     {
+      id: 'tours' as NavTab,
+      title: 'Tours & Line Schedule',
+      icon: <Route className="h-6 w-6" />,
+      color: 'fuchsia' as const
+    },
+    {
       id: 'live' as NavTab,
       title: 'Live Attendance',
       icon: <Activity className="h-6 w-6" />,
@@ -435,6 +444,8 @@ export default function App() {
         return <HisabXLScreen />;
       case 'workers':
         return <WorkersScreen />;
+      case 'tours':
+        return <ToursScreen currentUser={currentUser} />;
       case 'live':
         return <LiveScreen />;
       case 'outside':

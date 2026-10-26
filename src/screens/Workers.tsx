@@ -18,6 +18,7 @@ import { ROLES, getRoleDefinition } from '../roles';
 import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer, UserPlus, Pencil, Trash2, UserCheck } from 'lucide-react';
 import StaffApp from './StaffApp';
 import LocationIntel from '../components/LocationIntel';
+import Avatar from '../components/Avatar';
 import { registerStaff, updateStaffDetails, changeStaffPin, deleteStaff } from '../staffAdmin';
 
 // BOSS Task 52 (2026-10-26): credit scale 1-300 — display "125/300".
@@ -686,6 +687,9 @@ export default function WorkersScreen() {
                     className={`hover:bg-slate-800/30 transition cursor-pointer ${openLog ? 'bg-rose-500/[0.04]' : ''}`}
                   >
                     <td className="px-2.5 py-1.5 font-bold text-white whitespace-nowrap">
+                      <span className="mr-2 inline-flex align-middle" title={w.name}>
+                        <Avatar photo={w.photo} name={w.name} size={24} />
+                      </span>
                       {w.name}
                       {openLog && (
                         <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-black text-rose-300">
