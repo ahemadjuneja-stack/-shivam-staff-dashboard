@@ -76,61 +76,80 @@ const todayDayStr = () => String(new Date().getDate());
 const HG_COL = 22;
 
 // ============================================================
-// PREMIUM DARK GRID THEME — VIEW-ONLY color transform (Boss: 'colors
-// change karo premium, dashboard themes se match, code/line wahi rahe').
-// Canonical chart ke apne colors hue-preserving dark navy-emerald palette
-// me map hote hai — har section ki pehchan bani rehti hai. Grid data /
-// formulas / merges / XL export 100% untouched.
+// SHIVAM CASH COUNTER — PREMIUM PRODUCT PALETTE (Task 74)
+// Boss: 'apne hisab se changes karo — poora colors change, HIGH LEVEL
+// professional, XL jaisa cheap na lage. Line/box/calculation PURANE rahenge.'
+// Section-aware rich design: har area ki apni premium identity, zebra rows,
+// glowing header strip, computed-cell emerald glow. Grid data / formulas /
+// merges / XL export 100% untouched — sirf screen colors.
 // ============================================================
-const GRID_BG_DEFAULT = '#0e1830';
-const GRID_BORDER = '#223055';
+const GRID_BORDER = '#1c2b58';   // hairline grid lines
+const SECTION_EDGE = '#3b5492';  // section boundary accent line
 
-const hexToHsl = (hex: string): [number, number, number] => {
-  const r = parseInt(hex.slice(0, 2), 16) / 255;
-  const g = parseInt(hex.slice(2, 4), 16) / 255;
-  const b = parseInt(hex.slice(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h: number;
-  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-  else if (max === g) h = (b - r) / d + 2;
-  else h = (r - g) / d + 4;
-  return [h * 60, s, l];
+const PREMIUM = {
+  base: '#0c1531',      // bill-entry base cell
+  baseAlt: '#101c42',   // zebra alternate row
+  deptBox: '#0d2438',   // department details box (A-C) — emerald tint
+  cashGiven: '#1a1c54', // office Cash Given side (M-P) — royal violet tint (Boss: 'waha colors add karo')
+  parcel: '#0a1f46',    // parcel register side (Q-AB) — cyan tint
+  headerGrad: 'linear-gradient(180deg, #263f7f 0%, #152550 100%)'
 };
 
-// Light/gray backgrounds -> navy tiers; colored fills -> same-hue dark premium tint
-const premiumCellBg = (cssColor: string | null): string => {
-  if (!cssColor) return GRID_BG_DEFAULT;
-  const hex = cssColor.replace('#', '').slice(-6).toUpperCase();
-  const [h, s, l] = hexToHsl(hex);
-  if (s < 0.08) {
-    if (l > 0.85) return '#0e1830'; // white sheet -> base navy
-    if (l > 0.6) return '#121d3c';  // light gray band -> alt navy
-    if (l > 0.3) return '#16234a';
-    return '#1a2a55';
-  }
-  const S = Math.min(0.5, Math.max(0.26, s * 0.55));
-  const L = l > 0.6 ? 0.19 : 0.16;
-  return `hsl(${Math.round(h)} ${Math.round(S * 100)}% ${Math.round(L * 100)}%)`;
+// Canon accent fills -> premium glow accents (section identity same rehti hai)
+const CANON_BG_MAP: Record<string, string> = {
+  '073763': PREMIUM.headerGrad,                                  // navy headers -> rich indigo gradient
+  '274E13': 'linear-gradient(180deg, #10624a 0%, #0a3529 100%)', // dark green -> deep emerald gradient
+  '38761D': '#114c3b', // green -> emerald
+  '783F04': '#3b2a12', // brown -> bronze
+  '4C1130': '#3a1434', // maroon -> wine
+  'EAD1DC': '#2b1a48', // pink band -> violet-rose
+  'B6D7A8': '#0f4f3d', // green band -> emerald glow
+  'D9EAD3': '#125746', // green band light -> emerald glow
+  'E06666': '#4c1832', // red -> rose glow
+  'E6B8AF': '#421a2e', // light red -> rose
+  'BF9000': '#3f2e0d', // gold -> amber
+  'FFD966': '#453411', // yellow -> amber glow
+  'FFF2CC': '#383014', // cream -> amber soft
+  'EBEFF1': '#131d40', // light gray -> alt navy
+  'FFFFFF': ''         // white -> base (zebra/section)
 };
 
-// Dark fonts -> light (same hue); light fonts -> brightened readable
-const premiumFontColor = (cssColor: string | null): string => {
-  if (!cssColor) return '#dbe4f3';
-  const hex = cssColor.replace('#', '').slice(-6).toUpperCase();
-  const [h, s, l] = hexToHsl(hex);
-  if (s < 0.08) {
-    if (l < 0.45) return '#dbe4f3';
-    return l > 0.85 ? '#f3f6fc' : '#c9d4e8';
+// Canon font colors -> premium light accents
+const CANON_FG_MAP: Record<string, string> = {
+  '000000': '#dbe4fa',
+  '0C343D': '#7dd3fc',
+  '4C1130': '#f9a8d4',
+  '660000': '#fca5a5',
+  '7F6000': '#fcd34d',
+  'C27BA0': '#f0abfc',
+  'FF0000': '#fda4af',
+  '0000FF': '#93c5fd',
+  'FFFFFF': '#f2f6ff',
+  'EFEFEF': '#e4ebfa',
+  'EAD1DC': '#f5d0e8'
+};
+
+// Section-aware premium background — structure/lines EXACT same, sirf colors
+const sectionCellBg = (r: number, c: number, canonColor: string | null): string => {
+  if (canonColor) {
+    const mapped = CANON_BG_MAP[canonColor.replace('#', '').toUpperCase()];
+    if (mapped) return mapped;
   }
-  if (l < 0.45) {
-    return `hsl(${Math.round(h)} ${Math.round(Math.min(0.6, Math.max(0.2, s * 0.7)) * 100)}% 78%)`;
+  if (r === 0) return PREMIUM.headerGrad;           // glowing header strip
+  if (c <= 2) return PREMIUM.deptBox;               // department details box
+  if (c >= 12 && c <= 15) return PREMIUM.cashGiven; // office Cash Given side
+  if (c >= 16) return PREMIUM.parcel;               // parcel register side
+  return r % 2 === 1 ? PREMIUM.baseAlt : PREMIUM.base; // zebra rows
+};
+
+const sectionCellFont = (r: number, c: number, canonColor: string | null, computed: boolean): string => {
+  if (computed) return '#34d399';                   // formula cells — emerald glow
+  if (canonColor) {
+    const mapped = CANON_FG_MAP[canonColor.replace('#', '').toUpperCase()];
+    if (mapped) return mapped;
   }
-  return `hsl(${Math.round(h)} ${Math.round(Math.min(0.55, s) * 100)}% ${l > 0.8 ? 82 : Math.max(72, Math.round(l * 100) - 6)}%)`;
+  if (r === 0) return '#e8efff';                    // header text
+  return '#d9e3fb';
 };
 
 export default function HisabXLScreen() {
@@ -611,7 +630,7 @@ export default function HisabXLScreen() {
             <button
               onClick={handleDownloadWorkbook}
               disabled={!currentMonth || !selectedMonthId}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 ring-1 ring-emerald-300/40 transition-all hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-xl hover:shadow-emerald-500/40 disabled:translate-y-0 disabled:opacity-40"
+              className="btn-shine flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 ring-1 ring-emerald-300/40 transition-all hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-xl hover:shadow-emerald-500/40 disabled:translate-y-0 disabled:opacity-40"
             >
               <Download className="h-3.5 w-3.5" />
               <span>XL Download</span>
@@ -650,21 +669,21 @@ export default function HisabXLScreen() {
           <button
             onClick={() => dayNav(-1)}
             title="Pichli sheet"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:border-emerald-400/40 hover:from-slate-700 hover:text-emerald-300 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             onClick={() => dayNav(1)}
             title="Agli sheet"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:border-emerald-400/40 hover:from-slate-700 hover:text-emerald-300 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
           <button
             onClick={jumpToday}
             title="Aaj ki sheet par jump karo (fresh 0)"
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3 text-[11px] font-black tracking-wide text-white shadow-lg shadow-indigo-600/25 ring-1 ring-indigo-300/30 transition-all hover:-translate-y-px hover:shadow-xl disabled:opacity-40"
+            className="btn-shine flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3 text-[11px] font-black tracking-wide text-white shadow-lg shadow-indigo-600/25 ring-1 ring-indigo-300/30 transition-all hover:-translate-y-px hover:shadow-xl disabled:opacity-40"
           >
             <Calendar className="h-3.5 w-3.5" />
             TODAY
@@ -673,7 +692,7 @@ export default function HisabXLScreen() {
             onClick={() => fetchMonths(false, selectedMonthId)}
             title="Refresh Months"
             disabled={loadingMonths}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-50"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:border-emerald-400/40 hover:from-slate-700 hover:text-emerald-300 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-indigo-400' : ''}`} />
           </button>
@@ -699,7 +718,7 @@ export default function HisabXLScreen() {
                   title={isTodayTab ? 'Aaj ka din — fresh 0 se start' : isDaySheetName(name) ? `Day ${name}` : 'Haste & Reminder'}
                   className={`shrink-0 whitespace-nowrap rounded-t-lg border-r border-slate-700/60 px-3.5 py-1.5 text-xs font-semibold transition ${
                     isSelected
-                      ? 'bg-gradient-to-b from-slate-950 to-[#0b1430] font-bold text-emerald-300 shadow-[inset_0_2px_0_0_rgb(52_211_153)]'
+                      ? 'bg-gradient-to-b from-[#111d42] to-[#0b1430] font-bold text-emerald-300 shadow-[inset_0_2px_0_0_rgb(52_211_153),0_0_24px_rgba(52,211,153,0.18)]'
                       : isTodayTab
                       ? 'text-indigo-300 hover:bg-slate-800/60'
                       : 'text-slate-400 hover:bg-slate-800/60'
@@ -745,9 +764,13 @@ export default function HisabXLScreen() {
           </div>
         </div>
       ) : (
-        <div className="px-4 pb-8 pt-3">
+        <div className="relative px-4 pb-8 pt-3">
+          {/* Ambient premium glow — screen ko XL-copy se PRODUCT bana deta hai */}
+          <div className="pointer-events-none absolute -top-8 left-16 h-44 w-44 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute right-24 top-10 h-52 w-52 rounded-full bg-indigo-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-10 left-1/3 h-40 w-40 rounded-full bg-violet-500/[0.07] blur-3xl" />
           {/* Premium dark grid card — dashboard navy theme match (data/formulas untouched) */}
-          <div className="overflow-hidden rounded-b-xl rounded-tr-xl border border-[#1e2c52] bg-gradient-to-b from-[#0b1426] to-[#0a1122] shadow-2xl shadow-black/60 ring-1 ring-emerald-400/10">
+          <div className="relative overflow-hidden rounded-b-xl rounded-tr-xl border border-[#233464] bg-gradient-to-b from-[#0b1426] to-[#0a1122] shadow-[0_24px_90px_-24px_rgba(16,185,129,0.2)] ring-1 ring-white/10">
             <div className="xl-scroll overflow-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
               <table
                 className="w-max select-text border-collapse"
@@ -802,18 +825,22 @@ export default function HisabXLScreen() {
                             : null;
                         }
 
-                        const bgColor = premiumCellBg(colorToCss(styleObj?.fill?.fgColor));
-                        const fontColor = premiumFontColor(colorToCss(styleObj?.font?.color));
+                        const bgColor = sectionCellBg(r, c, colorToCss(styleObj?.fill?.fgColor));
+                        const fontColor = sectionCellFont(r, c, colorToCss(styleObj?.font?.color), computed);
+                        // Formula cells — emerald wash overlay (premium auto-glow)
+                        const bgFinal = computed ? `linear-gradient(rgba(52,211,153,0.10), rgba(52,211,153,0.10)), ${bgColor}` : bgColor;
                         const fontWeight = styleObj?.font?.bold ? 'bold' : 'normal';
                         const fontStyle = styleObj?.font?.italic ? 'italic' : 'normal';
                         const fontSize = styleObj?.font?.sz ? `${Math.round(styleObj.font.sz * 1.33)}px` : '13px';
                         const textAlign = styleObj?.alignment?.horizontal ?? (isNumericValue(val) ? 'right' : 'left');
                         const whiteSpace = styleObj?.alignment?.wrapText ? 'normal' : 'nowrap';
 
-                        // Premium hairline grid lines — position same, sirf color (Boss rule)
+                        // Premium hairline grid lines — position EXACT same (Boss rule);
+                        // section boundaries par stronger accent line = premium separation
+                        const isSectionEdge = c === 3 || c === 12 || c === 16;
                         const borderTop = `1px solid ${GRID_BORDER}`;
                         const borderBottom = `1px solid ${GRID_BORDER}`;
-                        const borderLeft = `1px solid ${GRID_BORDER}`;
+                        const borderLeft = isSectionEdge ? `2px solid ${SECTION_EDGE}` : `1px solid ${GRID_BORDER}`;
                         const borderRight = `1px solid ${GRID_BORDER}`;
 
                         let displayVal: string | number | null = val;
@@ -843,15 +870,17 @@ export default function HisabXLScreen() {
                             colSpan={effectiveColSpan && effectiveColSpan > 1 ? effectiveColSpan : undefined}
                             onClick={() => handleCellClick(r, c)}
                             title={`${cellToA1(r, c)}: ${val ?? ''}${computed ? ' (Auto-computed)' : ' (Click to edit)'}`}
-                            className="cursor-pointer select-text overflow-hidden px-1 py-[1px] align-middle transition-[filter] duration-100 hover:brightness-[1.45]"
+                            className="xl-cell cursor-pointer select-text overflow-hidden px-1 py-[1px] align-middle"
                             style={{
-                              backgroundColor: bgColor,
+                              background: bgFinal,
                               color: fontColor,
                               fontFamily: styleObj?.font?.name ? `'${styleObj.font.name}', 'Comfortaa', sans-serif` : "'Comfortaa', 'Segoe UI', sans-serif",
                               fontWeight,
                               fontStyle,
                               fontSize,
                               lineHeight: 1.15,
+                              textShadow: computed ? '0 0 12px rgba(52,211,153,0.45)' : r === 0 ? '0 1px 10px rgba(99,132,255,0.4)' : undefined,
+                              letterSpacing: r === 0 ? '0.04em' : undefined,
                               textAlign: textAlign as any,
                               whiteSpace: whiteSpace as any,
                               borderTop,
@@ -873,7 +902,7 @@ export default function HisabXLScreen() {
                                 >
                                   <option value="">(Blank)</option>
                                   {(editingCell.col === 5 ? ['Cash', 'Receipt'] : editingCell.col === 16 ? ['Transport', 'Courior', 'In Hand', 'Other Party', 'Riksha'] : ['1', '2']).map((opt) => (
-                                    <option key={opt} value={opt} className="bg-[#0e1830] text-slate-100">{opt}</option>
+                                    <option key={opt} value={opt} className="bg-[#101b3e] text-slate-100">{opt}</option>
                                   ))}
                                 </select>
                               ) : (
@@ -889,7 +918,7 @@ export default function HisabXLScreen() {
                                   }}
                                   onBlur={() => handleSaveCell()}
                                   className="m-0 w-full border-0 bg-transparent p-0 outline-none"
-                                  style={{ fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', fontStyle: 'inherit', color: 'inherit', backgroundColor: 'transparent', textAlign: textAlign as any }}
+                                  style={{ fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', fontStyle: 'inherit', color: 'inherit', backgroundColor: 'transparent', caretColor: '#34d399', textAlign: textAlign as any }}
                                 />
                               )
                             ) : (

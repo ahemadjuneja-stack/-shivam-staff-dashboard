@@ -67,3 +67,31 @@ body {
 .xl-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #4d64a0, #314273); }
 .xl-scroll::-webkit-scrollbar-corner { background: #0a1122; }
 .xl-scroll { scrollbar-color: #314273 #0a1122; }
+
+/* ===== TASK 74 — PREMIUM PRODUCT FINISH (Boss: 'high level professional, XL jaisa na lage') ===== */
+/* Button shine sweep — hero buttons par soft light sweep (boring screen nahi) */
+.btn-shine { position: relative; overflow: hidden; }
+.btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  transform: skewX(-20deg);
+  animation: btnShineSweep 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes btnShineSweep {
+  0% { left: -80%; }
+  55% { left: 140%; }
+  100% { left: 140%; }
+}
+
+/* Cell hover — emerald ring glow (cheap flash ki jagah premium touch) */
+.xl-cell { transition: box-shadow 0.12s ease, filter 0.12s ease; }
+.xl-cell:hover {
+  box-shadow: inset 0 0 0 1.5px rgba(110, 231, 183, 0.45), 0 0 16px rgba(52, 211, 153, 0.14);
+  filter: brightness(1.22);
+}
