@@ -35,6 +35,22 @@ import ShivamLogo from './components/ShivamLogo';
 type NavTab = 'hisabxl' | 'workers' | 'live' | 'outside' | 'hisab' | 'settings';
 type SessionRole = 'manager' | 'staff' | 'salesman' | null;
 
+// Tab persistence — Boss order: refresh par jis page par tha wahi page khule,
+// home par redirect NAHI. Last active tab localStorage me save hota hai.
+const TAB_PERSIST_KEY = 'shivam-dash-active-tab';
+const VALID_TABS: NavTab[] = ['hisabxl', 'workers', 'live', 'outside', 'hisab', 'settings'];
+
+// Bade sidebar icon tiles — Boss order: har nav item ka apna colored logo block,
+// upar se niche tak pure panel me adjust
+const TILE_STYLES: Record<string, string> = {
+  emerald: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400',
+  sky: 'bg-sky-500/15 border-sky-500/30 text-sky-400',
+  amber: 'bg-amber-500/15 border-amber-500/30 text-amber-400',
+  rose: 'bg-rose-500/15 border-rose-500/30 text-rose-400',
+  teal: 'bg-teal-500/15 border-teal-500/30 text-teal-400',
+  purple: 'bg-purple-500/15 border-purple-500/30 text-purple-400'
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionRole, setSessionRole] = useState<SessionRole>(null);
@@ -43,7 +59,18 @@ export default function App() {
   const [accessDenied, setAccessDenied] = useState<boolean>(false);
 
   // Navigation state - Hisab XL is the default tab shown after manager/admin login
-  const [activeTab, setActiveTab] = useState<NavTab>('hisabxl');
+  // Restore last active tab on refresh (Boss order: wahi page rahe)
+  const [activeTab, setActiveTabState] = useState<NavTab>(() => {
+    try {
+      const saved = localStorage.getItem(TAB_PERSIST_KEY) as NavTab | null;
+      if (saved && VALID_TABS.includes(saved)) return saved;
+    } catch { /* storage unavailable */ }
+    return 'hisabxl';
+  });
+  const setActiveTab = (tab: NavTab) => {
+    setActiveTabState(tab);
+    try { localStorage.setItem(TAB_PERSIST_KEY, tab); } catch { /* storage unavailable */ }
+  };
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [outsideCount, setOutsideCount] = useState(0);
@@ -59,14 +86,17 @@ export default function App() {
       setLoading(true);
       if (user) {
         try {
-          const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+          // Parallel Firestore reads — refresh par session restore almost half time leta hai
+          const [adminDoc, userDoc] = await Promise.all([
+            getDoc(doc(db, 'admins', user.uid)),
+            getDoc(doc(db, 'users', user.uid))
+          ]);
           if (adminDoc.exists()) {
             setCurrentUser(user);
             setSessionRole('manager');
             setUserProfile(null);
             setAccessDenied(false);
           } else {
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
             if (userDoc.exists()) {
               const profile = { uid: userDoc.id, ...(userDoc.data() as Omit<UserProfile, 'uid'>) };
               if (profile.status === 'active') {
@@ -157,6 +187,9 @@ export default function App() {
     return () => { un0(); un1(); un2(); };
   }, [currentUser, sessionRole]);
 
+  // Home = Hisab XL (Boss order: logo click har screen se home par le jaye)
+  const goHome = () => setActiveTab('hisabxl');
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -179,13 +212,15 @@ export default function App() {
     try {
       const res = await signInWithEmailAndPassword(auth, email.trim(), password);
       const user = res.user;
-      const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+      const [adminDoc, userDoc] = await Promise.all([
+        getDoc(doc(db, 'admins', user.uid)),
+        getDoc(doc(db, 'users', user.uid))
+      ]);
       if (adminDoc.exists()) {
         setCurrentUser(user);
         setSessionRole('manager');
         setUserProfile(null);
       } else {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
         if (userDoc.exists()) {
           const profile = { uid: userDoc.id, ...(userDoc.data() as Omit<UserProfile, 'uid'>) };
           if (profile.status === 'active') {
@@ -232,13 +267,15 @@ export default function App() {
     }
   };
 
-  // 1. Loading State: Full screen loader during auth/session check
+  // 1. Loading State: Full screen BRAND loader during auth/session check
+  // (parallel Firestore reads = fast restore + official SHIVAM shine while waiting)
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-200">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
-          <p className="text-sm font-semibold tracking-wide text-slate-400">Verifying Credentials...</p>
+        <div className="flex flex-col items-center gap-7">
+          <ShivamLogo size="xl" />
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-indigo-500 border-t-transparent"></div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-slate-500">Loading Dashboard...</p>
         </div>
       </div>
     );
@@ -351,35 +388,41 @@ export default function App() {
   const navItems = [
     {
       id: 'hisabxl' as NavTab,
-      title: '📊 Hisab XL',
-      icon: <Table className="h-4 w-4 text-emerald-400" />
+      title: 'Hisab XL',
+      icon: <Table className="h-6 w-6" />,
+      color: 'emerald' as const
     },
     {
       id: 'workers' as NavTab,
       title: 'Staff Management',
-      icon: <Users className="h-4 w-4 text-sky-400" />,
+      icon: <Users className="h-6 w-6" />,
+      color: 'sky' as const,
       badge: pendingCount > 0 ? pendingCount : null
     },
     {
       id: 'live' as NavTab,
       title: 'Live Attendance',
-      icon: <Activity className="h-4 w-4 text-amber-400" />
+      icon: <Activity className="h-6 w-6" />,
+      color: 'amber' as const
     },
     {
       id: 'outside' as NavTab,
       title: 'Outside Alerts',
-      icon: <MapPinOff className="h-4 w-4 text-rose-400" />,
+      icon: <MapPinOff className="h-6 w-6" />,
+      color: 'rose' as const,
       badge: outsideCount > 0 ? outsideCount : null
     },
     {
       id: 'hisab' as NavTab,
       title: 'Hisab Upload & Miracle',
-      icon: <FileSpreadsheet className="h-4 w-4 text-teal-400" />
+      icon: <FileSpreadsheet className="h-6 w-6" />,
+      color: 'teal' as const
     },
     {
       id: 'settings' as NavTab,
       title: 'Settings & GPS',
-      icon: <Settings className="h-4 w-4 text-purple-400" />
+      icon: <Settings className="h-6 w-6" />,
+      color: 'purple' as const
     }
   ];
 
@@ -422,14 +465,18 @@ export default function App() {
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Brand Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-          <div className="flex flex-col items-start">
-            <span className="shivam-silver shivam-silver-shine-slow text-base tracking-[0.28em] font-bold leading-none">
+        {/* Brand Header — click = Home (Boss order) */}
+        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+          <button
+            onClick={() => { goHome(); setMobileMenuOpen(false); }}
+            title="Go to Home"
+            className="flex flex-col items-start rounded-lg hover:opacity-80 transition"
+          >
+            <span className="shivam-silver shivam-silver-shine text-lg tracking-[0.28em] font-bold leading-none">
               S H I V A M
             </span>
             <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-indigo-400 mt-1">Manager Dashboard</p>
-          </div>
+          </button>
           <button
             onClick={() => setMobileMenuOpen(false)}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 lg:hidden"
@@ -438,10 +485,11 @@ export default function App() {
           </button>
         </div>
 
-        {/* Navigation Item List */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5">
+        {/* Navigation Item List — bade colored icon tiles (Boss order) */}
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
           {navItems.map((item) => {
             const isSelected = activeTab === item.id;
+            const tile = TILE_STYLES[item.color];
             return (
               <button
                 key={item.id}
@@ -449,16 +497,26 @@ export default function App() {
                   setActiveTab(item.id);
                   setMobileMenuOpen(false);
                 }}
-                className={`w-full flex items-center justify-between rounded-xl px-3.5 py-3 text-xs font-bold transition ${
+                className={`w-full flex items-center gap-3 rounded-2xl p-2.5 text-left transition ${
                   isSelected
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                    ? 'bg-indigo-600 shadow-lg shadow-indigo-600/25'
+                    : 'hover:bg-slate-800/80'
                 }`}
               >
-                <div className="flex items-center gap-2.5">
+                <span
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
+                    isSelected ? 'border-white/30 bg-white/15 text-white' : tile
+                  }`}
+                >
                   {item.icon}
-                  <span>{item.title}</span>
-                </div>
+                </span>
+                <span
+                  className={`flex-1 text-xs font-bold leading-snug ${
+                    isSelected ? 'text-white' : 'text-slate-300'
+                  }`}
+                >
+                  {item.title}
+                </span>
                 {item.badge && (
                   <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-slate-950">
                     {item.badge}
@@ -493,18 +551,29 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-6 py-3.5 backdrop-blur">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-4">
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 lg:hidden"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-white">
+            {/* SHIVAM logo on EVERY screen — click = Home (Boss order) */}
+            <button
+              onClick={goHome}
+              title="Go to Home"
+              className="flex items-center hover:opacity-80 transition"
+            >
+              <span className="shivam-silver shivam-silver-shine text-sm sm:text-lg tracking-[0.28em] font-bold leading-none whitespace-nowrap">
+                S H I V A M
+              </span>
+            </button>
+            <span className="hidden sm:block h-6 w-px bg-slate-700"></span>
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white truncate">
                 {navItems.find((n) => n.id === activeTab)?.title || 'Dashboard'}
               </h2>
-              <p className="text-[11px] text-slate-400">Shivam Staff Management &amp; Enterprise Control Panel</p>
+              <p className="hidden md:block text-[11px] text-slate-400">Shivam Staff Management &amp; Enterprise Control Panel</p>
             </div>
           </div>
 
