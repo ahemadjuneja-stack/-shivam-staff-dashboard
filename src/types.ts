@@ -181,3 +181,135 @@ export interface DutyGap {
   createdAt: number;
   notedAt?: number;
 }
+
+// ============================================================
+// COUNTER BOOK (Task 67 — Boss notation rule)
+// ALL amounts stored as integer PAISE (real). Counter Book UI
+// displays CHART NOTATION (/10 system): 1 chart unit = Rs.10 =
+// 1000 paise. 2000 -> 200, 3456 -> 345.6. Tour Hisab uses real
+// rupees. The two systems are SEPARATE — never mixed.
+// ============================================================
+export type CbEntryType = 'cashSale' | 'udhari' | 'deposit' | 'expense' | 'parcel' | 'haste';
+export type CbUdhariMode = 'Cash' | 'Receipt';
+export type CbParcelMode = 'In Hand' | 'Transport' | 'Courier' | 'Other Party' | 'Riksha';
+export type CbCategory = 'CO' | 'IM' | 'HG';
+
+export interface CbEntry {
+  id: string;
+  type: CbEntryType;
+  dept: 1 | 2;
+  amtP: number;            // main amount, integer paise (chart display = amtP/1000)
+  name?: string;           // udhari party / parcel party / haste person
+  party?: string;          // haste party (shop)
+  billNo?: string;         // udhari bill no / parcel bill-in
+  billP?: number;          // udhari original bill amount
+  lessP?: number;          // udhari less/discount
+  mode?: string;           // udhari: 'Cash' | 'Receipt' ; parcel: CbParcelMode
+  head?: string;           // expense head
+  city?: string;           // parcel / haste city
+  cat?: CbCategory;        // parcel category CO / IM / HG
+  courier?: string;        // parcel transport name
+  vaydaDate?: string;      // haste promise date 'YYYY-MM-DD'
+  note?: string;
+  status?: 'pending' | 'done'; // haste / parcel status
+  by: string;
+  at: number;
+}
+
+export interface CbGini {
+  d1P: number;             // physically counted Dept-1 counter (paise)
+  d2P: number;
+  at: number;
+  by: string;
+}
+
+export interface CbCloseTotals {
+  exp1P: number;           // computed expected counter D1 at lock
+  exp2P: number;
+  sale1P: number;
+  sale2P: number;
+  recv1P: number;          // udhari Cash receipts
+  recv2P: number;
+  dep1P: number;
+  dep2P: number;
+  expn1P: number;          // expenses
+  expn2P: number;
+  nextCarryP1: number;     // gini counted if given else computed
+  nextCarryP2: number;
+  d1DiffP: number;         // gini - expected
+  d2DiffP: number;
+}
+
+export interface CbDay {
+  kind: 'cb-day';
+  date: string;            // 'YYYY-MM-DD'
+  status: 'open' | 'locked';
+  carryP1: number;         // carried-in counter (paise)
+  carryP2: number;
+  carryNote?: string;
+  entries: CbEntry[];
+  gini?: CbGini;
+  lockedAt?: number;
+  lockedBy?: string;
+  closeTotals?: CbCloseTotals;
+  createdAt: number;
+}
+
+export interface CbSettings {
+  kind: 'cb-settings';
+  openingP1: number;       // fresh-start opening, default Rs.2000 = 200000 paise
+  openingP2: number;
+  minCounterP: number;     // 2000-minimum rule (chart 200)
+}
+
+export interface CbAuditRec {
+  kind: 'cb-audit';
+  at: number;
+  by: string;
+  action: 'add' | 'delete' | 'gini' | 'lock' | 'unlock' | 'settings';
+  detail: string;
+}
+
+// ============================================================
+// TOUR HISAB (Task 67) — Miracle XL upload, REAL RUPEES
+// ============================================================
+export interface ThBill {
+  date: string;
+  no: string;
+  amtP: number;     // bill amount
+  rgP: number;      // R.G. goods return
+  lessP: number;
+  cashP: number;    // received split
+  upiP: number;
+  cheqP: number;
+  balP: number;     // closing balance (computed — code-only guarantee)
+  balStatedP?: number; // balance as stated in XL (for cross-check; cleared on edit)
+  src?: string;     // source ref e.g. 'DEESA row 14'
+  flag?: string;    // check failure message
+}
+
+export interface ThParty {
+  name: string;
+  code?: string;
+  openingP: number;
+  bills: ThBill[];
+  totalStatedP?: number; // party total row as stated in XL (cross-check)
+}
+
+export interface ThRoute {
+  name: string;
+  kharchaP: number;     // route expense (from summary page)
+  aangadiyaP: number;   // market fee paid
+  parties: ThParty[];
+  src?: string;
+}
+
+export interface ThUpload {
+  kind: 'th-upload';
+  month: string;        // 'YYYY-MM'
+  fileName: string;
+  uploadedBy: string;
+  uploadedAt: number;
+  routes: ThRoute[];
+  checks: { ok: boolean; issues: string[] };
+}
