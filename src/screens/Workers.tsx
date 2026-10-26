@@ -7,7 +7,10 @@ import {
   doc,
   updateDoc,
   addDoc,
-  setDoc
+  setDoc,
+  getDocs,
+  orderBy,
+  limit as fsLimit
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, WorkLog, StarEvent, UserRole, OutsideLog } from '../types';
@@ -92,6 +95,33 @@ export default function WorkersScreen() {
   const [regBusy, setRegBusy] = useState(false);
 
   const [detailStaff, setDetailStaff] = useState<UserProfile | null>(null);
+
+  // CREDIT HISTORY (Boss Task 51): detail panel me har staff ka points up/down
+  // record — credit_points/{uid}/history subcollection se (staff app writes).
+  const [creditHistory, setCreditHistory] = useState<
+    { id: string; type: string; label: string; delta: number; at: number }[]
+  >([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  useEffect(() => {
+    if (!detailStaff) { setCreditHistory([]); return; }
+    let alive = true;
+    setHistoryLoading(true);
+    getDocs(
+      query(collection(db, 'credit_points', detailStaff.uid, 'history'), orderBy('at', 'desc'), fsLimit(30))
+    )
+      .then((snap) => {
+        if (!alive) return;
+        setCreditHistory(
+          snap.docs.map((d) => {
+            const v = d.data() as { type?: string; label?: string; delta?: number; at?: number };
+            return { id: d.id, type: v.type || 'task', label: v.label || 'Credit event', delta: Number(v.delta) || 0, at: Number(v.at) || 0 };
+          })
+        );
+      })
+      .catch(() => { if (alive) setCreditHistory([]); })
+      .finally(() => { if (alive) setHistoryLoading(false); });
+    return () => { alive = false; };
+  }, [detailStaff?.uid]);
   const [staffToEdit, setStaffToEdit] = useState<UserProfile | null>(null);
   const [editName, setEditName] = useState('');
   const [editCity, setEditCity] = useState('');
@@ -828,6 +858,48 @@ export default function WorkersScreen() {
                       <p>Salesman XL Cities: <span className="font-bold text-slate-100">{detailStaff.xlCities?.length ? detailStaff.xlCities.join(', ') : '—'}</span></p>
                       <p className="sm:col-span-2 font-mono text-[10px] text-slate-500 break-all">UID: {detailStaff.uid}</p>
                     </div>
+                  </div>
+
+                  {/* CREDIT HISTORY (Boss Task 51): kon se kaam se points up/down hue */}
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+                      <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-amber-400" />
+                        Credit Points History
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500">last 30 events</span>
+                    </div>
+                    {historyLoading ? (
+                      <p className="mt-3 text-xs text-slate-500">Loading history...</p>
+                    ) : creditHistory.length === 0 ? (
+                      <p className="mt-3 text-xs text-slate-500">
+                        No credit events yet. History fills up automatically as tasks get verified,
+                        outside work gets reviewed and duty days complete.
+                      </p>
+                    ) : (
+                      <ul className="mt-3 divide-y divide-slate-800/70">
+                        {creditHistory.map((h) => (
+                          <li key={h.id} className="flex items-center justify-between gap-3 py-2.5">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-100 truncate">{h.label}</p>
+                              <p className="text-[10px] font-semibold text-slate-500">
+                                {h.type === 'task' ? 'Task' : h.type === 'outside' ? 'Outside Work' : h.type === 'daily' ? 'Duty Day' : h.type === 'hourly' ? 'On-Duty Time' : 'Monthly Duty'}
+                                {h.at ? ' · ' + new Date(h.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-black tabular-nums border ${
+                                h.delta >= 0
+                                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                                  : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                              }`}
+                            >
+                              {h.delta >= 0 ? `+${h.delta}` : h.delta}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
 
