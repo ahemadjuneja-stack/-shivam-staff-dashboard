@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, updateDoc, doc, where } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { OutsideLog } from './types';
+import { elapsedMsOf } from './screens/Outside';
 import { MapPinOff, TimerReset, X } from 'lucide-react';
 
 // ============================================================
@@ -96,27 +97,45 @@ export default function OutsideAlertPopup() {
 
         <div className="max-h-[70vh] divide-y divide-slate-800 overflow-y-auto">
           {visible.map((log) => {
-            const elapsedMs = Date.now() - (log.fromAt || Date.now());
-            const over = typeof log.allowedMin === 'number' && elapsedMs > log.allowedMin * 60000;
+            const paused = typeof log.pausedAt === 'number';
+            const elapsedMs = elapsedMsOf(log, Date.now());
+            const over = !paused && typeof log.allowedMin === 'number' && elapsedMs > log.allowedMin * 60000;
             return (
               <div key={log.id} className="space-y-3 px-5 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[15px] font-black text-white">{log.name}</div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-rose-300">
-                      Shop ke {Math.round(elapsedMs / 60000)} min se 100m+ BAHAR hai (on duty)
+                    <div className="flex items-center gap-2">
+                      <span className="text-[15px] font-black text-white">{log.name}</span>
+                      {paused && (
+                        <span className="rounded-md border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-black text-sky-300">
+                          PAUSED — TOUR
+                        </span>
+                      )}
+                    </div>
+                    <div className={`mt-0.5 text-[11px] font-semibold ${paused ? 'text-sky-300' : 'text-rose-300'}`}>
+                      {paused ? (
+                        <>Tour mode — {Math.round(elapsedMs / 60000)} min freeze. Role staff hote isi time se resume.</>
+                      ) : (
+                        <>Shop ke {Math.round(elapsedMs / 60000)} min se 100m+ BAHAR hai (on duty)</>
+                      )}
                     </div>
                   </div>
                   <div className={`shrink-0 rounded-xl border px-3 py-2 text-center font-mono text-lg font-black tabular-nums ${
-                    over
-                      ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300'
-                      : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    paused
+                      ? 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+                      : over
+                        ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300'
+                        : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                   }`}>
                     {fmtElapsed(elapsedMs)}
                   </div>
                 </div>
 
-                {typeof log.allowedMin === 'number' ? (
+                {paused ? (
+                  <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-3.5 py-2.5 text-[11.5px] font-semibold text-sky-300/90">
+                    Salesman role ON — stopwatch + timer dono FREEZE. Role staff wapas hote hi isi time se chalu hoga (pause time count nahi).
+                  </div>
+                ) : typeof log.allowedMin === 'number' ? (
                   <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3.5 py-2.5 text-[11.5px] font-semibold text-slate-300">
                     Stopwatch set: <b className="text-white">{log.allowedMin} min</b> bola tha —
                     {over ? (

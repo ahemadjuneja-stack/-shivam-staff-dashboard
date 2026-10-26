@@ -158,6 +158,13 @@ export interface OutsideLog {
   createdAt: number;
   closedAt?: number;
   allowedMin?: number;
+  // TOUR PAUSE/RESUME (Boss order 2026-10-27): role salesman = time FREEZE,
+  // role staff wapas = WAHI SE resume jaha se chhoda tha.
+  //   pauseMs  = total paused duration (completed pauses, excluded from elapsed)
+  //   pausedAt = current pause start (absent = running)
+  // effective elapsed = now - fromAt - pauseMs - (pausedAt ? now - pausedAt : 0)
+  pauseMs?: number;
+  pausedAt?: number;
   cutApplied?: boolean;
   cutPoints?: number;
   cutReason?: string; // outside_reject/approved/ontime/late/no_notice

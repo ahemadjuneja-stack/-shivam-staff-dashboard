@@ -6,7 +6,9 @@ import {
   query,
   limit,
   updateDoc,
-  doc
+  doc,
+  runTransaction,
+  deleteField
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { OutsideLog, DutyGap } from '../types';
@@ -67,6 +69,50 @@ const agoStr = (ms: number | undefined): string => {
   return `${Math.floor(s / 86400)}d ago`;
 };
 
+// ============================================================
+// TOUR PAUSE/RESUME (Boss order 2026-10-27):
+// "Juned ke pass Staff se Salesman roll diya hai to ab wo time period me
+//  nahi aata jab tak wo tour me hai aur jab tak uska role badla nahi jaata.
+//  Jab uska role badla jaye to wapis wahi se shuru hoga uska time duty
+//  jaha se wo chod kar agaya tha."
+// RULE: role = salesman (sales)  -> open outside logs FREEZE (stopwatch ruk)
+//       role = staff (worker)    -> WAHI SE resume (pause time count NAHI)
+// EFFECTIVE ELAPSED (pause-safe, code-only):
+//   now - fromAt - pauseMs - (pausedAt ? now - pausedAt : 0)
+// pausedAt present = frozen (pausedExtra badhta rahega, elapsed same rahega)
+// ============================================================
+export const elapsedMsOf = (log: { fromAt: number; pauseMs?: number; pausedAt?: number }, now: number): number => {
+  const pausedExtra = typeof log.pausedAt === 'number' ? Math.max(0, now - log.pausedAt) : 0;
+  return Math.max(0, now - log.fromAt - (log.pauseMs || 0) - pausedExtra);
+};
+
+// Idempotent pause: sirf tab jab pausedAt absent ho (race-safe)
+export async function pauseOutsideLog(logId: string) {
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, 'outside_logs', logId);
+    const s = await tx.get(ref);
+    if (!s.exists() || s.data().status !== 'open') return;
+    if (typeof s.data().pausedAt === 'number') return; // already paused
+    tx.update(ref, { pausedAt: Date.now(), pauseMs: Number(s.data().pauseMs) || 0 });
+  });
+}
+
+// Idempotent resume: pauseMs += (now - pausedAt), pausedAt delete
+// -> elapsed EXACT wahi point se chalu hota hai jaha freeze hua tha
+export async function resumeOutsideLog(logId: string) {
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, 'outside_logs', logId);
+    const s = await tx.get(ref);
+    if (!s.exists()) return;
+    const d = s.data();
+    if (typeof d.pausedAt !== 'number') return; // already running
+    tx.update(ref, {
+      pauseMs: (Number(d.pauseMs) || 0) + Math.max(0, Date.now() - Number(d.pausedAt)),
+      pausedAt: deleteField()
+    });
+  });
+}
+
 export default function OutsideScreen() {
   const [logs, setLogs] = useState<OutsideLog[]>([]);
   const [gaps, setGaps] = useState<DutyGap[]>([]);
@@ -117,6 +163,33 @@ export default function OutsideScreen() {
   const pendingGaps = gaps.filter((g) => g.status === 'pending');
   const staffDevices = devices.filter((d) => d.role === 'worker' || d.role === 'sales' || d.role === 'salesman');
 
+  // uid -> role map (self-heal ke liye)
+  const rolesByUid = useMemo(() => {
+    const m: Record<string, string> = {};
+    devices.forEach((d) => { m[d.uid] = (d.role || '').toLowerCase(); });
+    return m;
+  }, [devices]);
+
+  // SELF-HEAL TOUR PAUSE/RESUME (Boss order 2026-10-27): users role live
+  // onSnapshot se aata hai — role change turant reflect:
+  //   owner role = sales  -> saare open logs FREEZE (naya time count nahi)
+  //   owner role = worker -> paused logs WAHI SE resume
+  // Transactions idempotent hain — staff app bhi same kaam karta hai,
+  // double-pause/double-resume IMPOSSIBLE (pausedAt guard).
+  useEffect(() => {
+    openLogs.forEach((log) => {
+      if (!log.id) return;
+      const role = rolesByUid[log.uid] || '';
+      if (role === 'sales' || role === 'salesman') {
+        if (typeof log.pausedAt === 'number') return; // already paused
+        pauseOutsideLog(log.id).catch(() => {});
+      } else if (role === 'worker') {
+        if (typeof log.pausedAt !== 'number') return; // already running
+        resumeOutsideLog(log.id).catch(() => {});
+      }
+    });
+  }, [openLogs, rolesByUid]);
+
   // allowed minutes set (STOPWATCH — sirf dashboard se timer lag sakta hai)
   const setAllowed = async (log: OutsideLog) => {
     if (!log.id || busyId) return;
@@ -141,7 +214,7 @@ export default function OutsideScreen() {
   const review = async (log: OutsideLog, approve: boolean) => {
     if (!log.id || busyId) return;
     const durTxt = log.status === 'open'
-      ? `${Math.round((Date.now() - log.fromAt) / 60000)} min se bahar hai (abhi bhi)`
+      ? `${Math.round(elapsedMsOf(log, Date.now()) / 60000)} min se bahar hai (abhi bhi)`
       : `${fmtMin(log.outsideMin || 0)} bahar tha`;
     if (!approve) {
       const ok = window.confirm(
@@ -234,27 +307,34 @@ export default function OutsideScreen() {
               </span>
               <h3 className="text-sm font-black uppercase tracking-wider text-white">LIVE — Abhi Bahar Hai ({openLogs.length})</h3>
             </div>
-            <span className="text-[10px] font-semibold text-slate-500">stopwatch timer sirf dashboard se lagta hai</span>
+            <span className="text-[10px] font-semibold text-slate-500">stopwatch timer sirf dashboard se lagta hai • salesman role = auto pause</span>
           </div>
           <div className="divide-y divide-slate-800">
             {openLogs.map((log) => {
-              const elapsedMs = Date.now() - log.fromAt;
+              const paused = typeof log.pausedAt === 'number';
+              const elapsedMs = elapsedMsOf(log, Date.now());
               const elapsedMin = Math.floor(elapsedMs / 60000);
-              const over = typeof log.allowedMin === 'number' && elapsedMs > log.allowedMin * 60000;
+              const over = !paused && typeof log.allowedMin === 'number' && elapsedMs > log.allowedMin * 60000;
               const remaining = typeof log.allowedMin === 'number' ? Math.max(0, log.allowedMin - elapsedMin) : null;
               return (
                 <div key={log.id} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-bold text-white">{log.name}</span>
-                      <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-black text-rose-400">
-                        {elapsedMin} min se BAHAR
-                      </span>
+                      {paused ? (
+                        <span className="rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-black text-sky-300">
+                          PAUSED — TOUR MODE ({elapsedMin} min freeze)
+                        </span>
+                      ) : (
+                        <span className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-black text-rose-400">
+                          {elapsedMin} min se BAHAR
+                        </span>
+                      )}
                       {typeof log.allowedMin === 'number' && (
                         <span className={`rounded-md border px-2 py-0.5 text-[10px] font-black ${
-                          over ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                          over ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300' : paused ? 'border-slate-500/30 bg-slate-500/10 text-slate-400' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
                         }`}>
-                          {over ? `TIME OVER (bola tha ${log.allowedMin}m)` : `${remaining}m baaki (bola tha ${log.allowedMin}m)`}
+                          {over ? `TIME OVER (bola tha ${log.allowedMin}m)` : paused ? `TIMER FROZEN — ${remaining}m baaki (bola tha ${log.allowedMin}m)` : `${remaining}m baaki (bola tha ${log.allowedMin}m)`}
                         </span>
                       )}
                       {(log.flags || []).map((f) => {
@@ -265,14 +345,19 @@ export default function OutsideScreen() {
                       })}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-slate-400">
-                      <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{fmtDT(log.fromAt)} se chal raha hai</span>
+                      <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{fmtDT(log.fromAt)} se {paused ? 'freeze hai (tour)' : 'chal raha hai'}</span>
                       {typeof log.lat === 'number' && typeof log.lng === 'number' && (
                         <span className="inline-flex items-center gap-1"><RefreshCw className="h-3 w-3" />{log.lat.toFixed(4)}, {log.lng.toFixed(4)}</span>
                       )}
                     </div>
+                    {paused && (
+                      <div className="mt-1.5 rounded-lg border border-sky-500/25 bg-sky-500/5 px-3 py-1.5 text-[10.5px] font-semibold text-sky-300/90">
+                        Salesman tour mode — time freeze. Role staff hote hi isi time ({elapsedMin} min) se resume hoga, pause ka time count NAHI hoga.
+                      </div>
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    {typeof log.allowedMin !== 'number' && (
+                    {!paused && typeof log.allowedMin !== 'number' && (
                       <>
                         {[10, 15, 20, 30].map((n) => (
                           <button
