@@ -443,7 +443,7 @@ export default function App() {
     },
     {
       id: 'hisab' as NavTab,
-      title: 'Hisab Upload & Miracle',
+      title: 'Hisab XL',
       icon: <FileSpreadsheet className="h-6 w-6" />,
       color: 'teal' as const
     },

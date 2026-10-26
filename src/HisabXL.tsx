@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db } from './firebase';
 import {
-  Upload,
   Download,
   FileSpreadsheet,
   RefreshCw,
@@ -27,14 +26,9 @@ import {
   runFormulaEngine,
   buildMergeMap,
   sortSheetNames,
-  normalizeGrid,
-  extractStyles,
   loadSheetFromFirestore,
-  saveMonthWorkbookToFirestore,
   exportMonthWorkbook,
   CellValue,
-  verifySheet,
-  MismatchItem,
   colorToCss,
   CANON_TABLE,
   CANON_INDEX,
@@ -69,12 +63,6 @@ interface EditingCellState {
   origValue: string; // value at edit start (no-change -> close without save)
 }
 
-export interface HisabCheckReport {
-  daySheetCount: number;
-  totalChecked: number;
-  mismatches: MismatchItem[];
-}
-
 // Current REAL month "YYYY-MM" + aaj ki date
 const realMonthId = () => {
   const n = new Date();
@@ -97,24 +85,12 @@ export default function HisabXLScreen() {
   const [sheetsCache, setSheetsCache] = useState<{ [sheetName: string]: SheetData }>({});
   const [loadingSheet, setLoadingSheet] = useState<boolean>(false);
 
-  // Upload modal & verification report state
-  const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
-  const [uploadMonthNum, setUploadMonthNum] = useState<number>(new Date().getMonth() + 1); // 1-12
-  const [uploadYear, setUploadYear] = useState<number>(new Date().getFullYear());
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState<boolean>(false);
-  const [uploadProgress, setUploadProgress] = useState<string>('');
-  const [verificationReport, setVerificationReport] = useState<HisabCheckReport | null>(null);
-  const [saveFailures, setSaveFailures] = useState<string[]>([]);
-  const [overwritePrompt, setOverwritePrompt] = useState<{ monthId: string; monthLabel: string } | null>(null);
-
   // Editing cell state
   const [editingCell, setEditingCell] = useState<EditingCellState | null>(null);
   const [savingCell, setSavingCell] = useState<boolean>(false);
 
   // Toast feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const prevMonthRef = useRef<string>('');
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -367,177 +343,6 @@ export default function HisabXLScreen() {
     return buildMergeMap(currentSheet.merges);
   }, [currentSheet]);
 
-  // 3. Handle File Upload & Processing (purane mahine import karne ke liye)
-  const handleStartUpload = () => {
-    setSelectedFile(null);
-    setShowUploadModal(true);
-    setUploadProgress('');
-  };
-
-  const processAndUploadFile = async (forceOverwrite = false) => {
-    if (!selectedFile) {
-      showToast('Kripya Excel file select karein (.xlsx ya .xls)', 'error');
-      return;
-    }
-
-    const monthPadded = String(uploadMonthNum).padStart(2, '0');
-    const monthId = `${uploadYear}-${monthPadded}`;
-    const monthLabel = `${MONTH_NAMES[uploadMonthNum - 1]}-${uploadYear}`;
-
-    setUploading(true);
-    setUploadProgress('Reading Excel file...');
-
-    try {
-      const buffer = await selectedFile.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array', cellStyles: true });
-
-      if (!wb.SheetNames || wb.SheetNames.length === 0) {
-        throw new Error('Excel file me koi sheet nahi mili.');
-      }
-
-      const totalSheets = wb.SheetNames.length;
-      const parsedSheets: { [sheetName: string]: SheetData } = {};
-
-      setUploadProgress(`Processing ${totalSheets} sheets...`);
-
-      let daySheetCount = 0;
-      let totalChecked = 0;
-      const allMismatches: { sheetName: string; cell: string; excelValue: number; appValue: number }[] = [];
-
-      for (let i = 0; i < totalSheets; i++) {
-        const name = wb.SheetNames[i];
-        const ws = wb.Sheets[name];
-
-        // 1. Convert to 2D array of values
-        const rawAoa = XLSX.utils.sheet_to_json(ws, {
-          header: 1,
-          raw: true,
-          defval: null
-        }) as unknown[][];
-
-        // 2. Normalize to at least 53 rows × 37 columns
-        const normalized = normalizeGrid(rawAoa, 53, 37);
-
-        // 3. Verify accounting formulas vs stored values for day sheets
-        const isDay = isDaySheetName(name);
-        if (isDay) {
-          daySheetCount++;
-          const checkRes = verifySheet(rawAoa as CellValue[][], name);
-          totalChecked += checkRes.checked;
-          for (const m of checkRes.mismatches) {
-            allMismatches.push({
-              sheetName: name,
-              cell: m.cell,
-              excelValue: m.excelValue,
-              appValue: m.appValue
-            });
-          }
-        }
-
-        // 4. Run formula engine for day sheets
-        const finalGrid = isDay ? runFormulaEngine(normalized).grid : normalized;
-
-        // 5. Extract merges
-        const merges: string[] = (ws['!merges'] || []).map((m: any) => XLSX.utils.encode_range(m));
-
-        // 6. Extract column widths
-        const cols: (number | null)[] = (ws['!cols'] || []).map((c: any) =>
-          c?.wch ? c.wch : c?.wpx ? Math.round(c.wpx / 7) : null
-        );
-
-        // 7. Cell styles: day sheets = CANONICAL template DNA (same-to-same PC look, upload file se independent);
-        //    non-day sheets (Reminder etc.) = file se extract
-        let styleTable: Record<string, unknown>[];
-        let styleIndex: (number | null)[][];
-        if (isDay) {
-          styleTable = CANON_TABLE as unknown as Record<string, unknown>[];
-          styleIndex = CANON_INDEX;
-        } else {
-          const styleRows = Math.max(normalized.length, 53);
-          const styleCols = Math.max(normalized[0]?.length || 0, 37);
-          const extracted = extractStyles(ws, styleRows, styleCols);
-          styleTable = extracted.styleTable;
-          styleIndex = extracted.styleIndex;
-        }
-
-        parsedSheets[name] = {
-          name,
-          grid: finalGrid,
-          merges,
-          cols,
-          styleTable,
-          styleIndex
-        };
-      }
-
-      const report: HisabCheckReport = {
-        daySheetCount,
-        totalChecked,
-        mismatches: allMismatches
-      };
-
-      if (allMismatches.length > 0) {
-        console.log('Hisab Check Full Mismatches:', allMismatches);
-      }
-
-      // Overwrite check — in-app modal (window.confirm sandboxed preview me block ho jata hai)
-      const existing = months.find((m) => m.monthId === monthId);
-      if (existing && !existing.synthetic && !forceOverwrite) {
-        setOverwritePrompt({ monthId, monthLabel });
-        return;
-      }
-
-      setUploadProgress(`Saving ${totalSheets} sheets to Firestore...`);
-
-      const uid = auth.currentUser?.uid || 'admin';
-      const saveRes = await saveMonthWorkbookToFirestore(
-        db,
-        monthId,
-        monthLabel,
-        uid,
-        wb.SheetNames,
-        parsedSheets,
-        (savedCount, totalCount) => {
-          setUploadProgress(`Saving sheet ${savedCount}/${totalCount}...`);
-        }
-      );
-
-      // Mirror bhi update — uploaded sheets offline turant available
-      for (const name of Object.keys(parsedSheets)) {
-        mirrorSetSheet(monthId, name, {
-          grid: parsedSheets[name].grid,
-          merges: parsedSheets[name].merges,
-          cols: parsedSheets[name].cols
-        });
-      }
-      mirrorSetMonthDoc(monthId, { label: monthLabel, sheetNames: wb.SheetNames });
-
-      setVerificationReport(report);
-      if (saveRes.failed.length > 0) {
-        setSaveFailures(saveRes.failed);
-        showToast(`⚠️ ${saveRes.failed.length} sheets save NAHI hui — niche red banner dekho`, 'error');
-      } else {
-        setSaveFailures([]);
-        showToast(`✓ ${monthLabel} upload safal — ${saveRes.saved.length}/${wb.SheetNames.length} sheets saved!`, 'success');
-      }
-      setShowUploadModal(false);
-      setSheetsCache({});
-      await fetchMonths(false, monthId);
-      setActiveSheetName(wb.SheetNames[0]);
-    } catch (err: unknown) {
-      console.error('Upload error:', err);
-      const msg = (err as Error)?.message || '';
-      if (msg.includes('permission') || msg.includes('Permission')) {
-        showToast('Permission denied — Firebase Console me hisab rules publish karo', 'error');
-      } else {
-        showToast(`Upload failed: ${msg}`, 'error');
-      }
-    } finally {
-      setUploading(false);
-      setUploadProgress('');
-    }
-  };
-
   // 4. Cell Click / Edit Handling
   const handleCellClick = (r: number, c: number) => {
     // If computed cell, don't allow edit
@@ -694,7 +499,7 @@ export default function HisabXLScreen() {
       {/* Toast Notification (dark — navy theme) */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border px-5 py-3.5 shadow-2xl backdrop-blur-md text-xs font-bold transition-all ${
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border px-5 py-3.5 shadow-2xl ring-1 ring-white/10 backdrop-blur-md text-xs font-bold transition-all ${
             toast.type === 'success'
               ? 'border-emerald-500/40 bg-slate-900 text-emerald-300'
               : toast.type === 'error'
@@ -716,14 +521,18 @@ export default function HisabXLScreen() {
         </div>
       )}
 
-      {/* Top Bar (navy ribbon): Month Selector + TODAY + Upload + Download */}
-      <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/95 px-4 py-2.5 backdrop-blur">
+      {/* Top Bar (premium navy ribbon): Month Selector + TODAY + Download */}
+      <div className="sticky top-0 z-40 border-b border-slate-700/60 bg-gradient-to-r from-slate-950 via-[#0d1b3a] to-slate-950 shadow-xl shadow-black/30 backdrop-blur">
+        <div className="h-[2px] w-full bg-gradient-to-r from-emerald-400/70 via-indigo-400/70 to-emerald-400/70" />
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-emerald-400" />
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-700 shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-300/40">
+              <FileSpreadsheet className="h-5 w-5 text-white" />
+            </div>
             <div className="leading-tight">
-              <h2 className="text-base font-black tracking-wide text-white">HISAB XL</h2>
-              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-400/90">Daily Excel Accounts — Chart /10</p>
+              <h2 className="shivam-silver shivam-silver-shine-slow text-base font-black tracking-wide">HISAB XL</h2>
+              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-300/90">Daily Excel Accounts — Chart /10</p>
             </div>
           </div>
 
@@ -736,7 +545,7 @@ export default function HisabXLScreen() {
                 setSheetsCache({});
               }}
               disabled={loadingMonths || months.length === 0}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-bold text-slate-100 shadow-sm focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+              className="rounded-lg border border-slate-600/70 bg-slate-950/90 px-3 py-1.5 text-xs font-bold text-slate-100 ring-1 ring-white/5 transition hover:border-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:opacity-50"
             >
               {months.length === 0 ? (
                 <option value="">(No months yet)</option>
@@ -751,7 +560,7 @@ export default function HisabXLScreen() {
           </div>
 
           {/* TODAY chip */}
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-2.5 py-1 text-[10px] font-black tracking-wider text-indigo-300">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/40 bg-gradient-to-r from-indigo-500/20 via-violet-500/15 to-indigo-500/20 px-2.5 py-1 text-[10px] font-black tracking-wider text-indigo-200 ring-1 ring-inset ring-indigo-300/20">
             <Calendar className="h-3 w-3" />
             TODAY • {todayLabel}
           </span>
@@ -760,30 +569,23 @@ export default function HisabXLScreen() {
             onClick={() => fetchMonths(false, selectedMonthId)}
             title="Refresh Months"
             disabled={loadingMonths}
-            className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:opacity-50"
+            className="rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 p-1.5 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-indigo-400' : ''}`} />
           </button>
         </div>
 
-        {/* Action Buttons */}
+        {/* Action Buttons — sirf DOWNLOAD (Boss order: upload option nahi) */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleStartUpload}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            <span>XL Upload</span>
-          </button>
-
           <button
             onClick={handleDownloadWorkbook}
             disabled={!currentMonth || !selectedMonthId}
-            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 ring-1 ring-emerald-300/40 transition-all hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-xl hover:shadow-emerald-500/40 disabled:translate-y-0 disabled:opacity-40"
           >
             <Download className="h-3.5 w-3.5" />
             <span>XL Download</span>
           </button>
+        </div>
         </div>
       </div>
 
@@ -792,106 +594,23 @@ export default function HisabXLScreen() {
         <OutboxBanner />
       </div>
 
-      {/* Hisab Check Verification Report Banner (dark) */}
-      {verificationReport && (
-        <div
-          className={`mx-4 mt-3 rounded-xl border px-4 py-2.5 text-xs transition-all ${
-            verificationReport.mismatches.length === 0
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-          }`}
-        >
-          <button
-            onClick={() => setVerificationReport(null)}
-            title="Close Report"
-            className="absolute right-6 top-6 rounded p-1 text-slate-400 transition hover:bg-slate-800 hover:text-slate-200"
-          >
-            <X className="h-4 w-4" />
-          </button>
-
-          {verificationReport.mismatches.length === 0 ? (
-            <div className="flex items-start gap-2.5 pr-8">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-              <div>
-                <p className="font-bold">
-                  Hisab Check: {verificationReport.daySheetCount} sheets me calculation bilkul Excel jaisa hai ({verificationReport.totalChecked} cells milaan kiye)
-                </p>
-                <p className="mt-0.5 text-[11px] text-emerald-400/80">
-                  App auto-calculation engine matches stored Excel numbers 100%.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-1.5 pr-8">
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-                <div>
-                  <p className="font-bold">
-                    Hisab Check: {verificationReport.mismatches.length} cells me app aur Excel ke numbers alag hain
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-amber-400/80">
-                    (Showing up to 20 differences below. Full list logged to browser console)
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-amber-500/20 bg-slate-950 p-2 font-mono text-[11px]">
-                {verificationReport.mismatches.slice(0, 20).map((m, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-4 border-b border-amber-500/10 py-0.5 text-slate-300 last:border-0">
-                    <span>
-                      Sheet <strong className="text-amber-300">'{m.sheetName}'</strong> → <span className="font-bold text-sky-300">{m.cell}</span>
-                    </span>
-                    <span>
-                      Excel <span className="font-bold text-emerald-300">{m.excelValue}</span>, App <span className="font-bold text-rose-400">{m.appValue}</span>
-                    </span>
-                  </div>
-                ))}
-                {verificationReport.mismatches.length > 20 && (
-                  <p className="pt-0.5 text-[10px] italic text-amber-400/80">
-                    ... and {verificationReport.mismatches.length - 20} more mismatches (see console)
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Save Failures Persistent Banner (dark) */}
-      {saveFailures.length > 0 && (
-        <div className="mx-4 mt-3 flex items-start justify-between gap-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300">
-          <div>
-            <p className="font-bold">
-              {saveFailures.length} sheets Firestore me save NAHI hui: {saveFailures.slice(0, 12).join(', ')}
-              {saveFailures.length > 12 ? ` +${saveFailures.length - 12} more` : ''}
-            </p>
-            <p className="mt-0.5 text-[11px] text-rose-400/80">
-              Ye sheets purana data dikha rahi hongi. Internet check karo aur file dobara upload karo. Baar-baar fail ho to F12 console me [HISAB SAVE FAIL] error dekho.
-            </p>
-          </div>
-          <button onClick={() => setSaveFailures([])} className="rounded p-1 text-rose-400 hover:bg-rose-500/10" title="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
       {/* Live Formula Total Strip (navy cards) */}
       <div className="grid grid-cols-2 gap-2 px-4 pt-3 lg:grid-cols-4">
         {([
-          { label: 'CASH 1NO', key: 'cash1no' as const, dot: 'bg-emerald-400', formula: 'AH53 = SUM(AH2:AH50)' },
-          { label: 'RECEIPT 1NO', key: 'recipt1no' as const, dot: 'bg-sky-400', formula: 'AI53 = SUM(AI2:AI50)' },
-          { label: 'CASH 2NO', key: 'csah2no' as const, dot: 'bg-amber-400', formula: 'AJ53 = SUM(AJ2:AJ50)' },
-          { label: 'RECEIPT 2NO', key: 'recipt2no' as const, dot: 'bg-purple-400', formula: 'AK53 = SUM(AK2:AK50)' }
+          { label: 'CASH 1NO', key: 'cash1no' as const, dot: 'bg-emerald-400', val: 'text-emerald-300', formula: 'AH53 = SUM(AH2:AH50)' },
+          { label: 'RECEIPT 1NO', key: 'recipt1no' as const, dot: 'bg-sky-400', val: 'text-sky-300', formula: 'AI53 = SUM(AI2:AI50)' },
+          { label: 'CASH 2NO', key: 'csah2no' as const, dot: 'bg-amber-400', val: 'text-amber-300', formula: 'AJ53 = SUM(AJ2:AJ50)' },
+          { label: 'RECEIPT 2NO', key: 'recipt2no' as const, dot: 'bg-purple-400', val: 'text-purple-300', formula: 'AK53 = SUM(AK2:AK50)' }
         ]).map((chip) => (
-          <div key={chip.key} className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/80 px-3.5 py-2.5">
+          <div key={chip.key} className="flex items-center justify-between gap-2 rounded-xl border border-slate-700/60 bg-gradient-to-br from-slate-900 via-slate-900/70 to-slate-950 px-3.5 py-2.5 shadow-lg shadow-black/25 ring-1 ring-white/5 transition-all hover:-translate-y-px hover:border-slate-500/70 hover:shadow-xl">
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${chip.dot}`} />
+                <span className={`h-2 w-2 shrink-0 rounded-full ${chip.dot} shadow-[0_0_6px_rgba(255,255,255,0.25)]`} />
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{chip.label}</span>
               </div>
               <p className="mt-0.5 truncate text-[9px] font-medium text-slate-600">{chip.formula}</p>
             </div>
-            <span className="font-mono text-base font-black text-white">
+            <span className={`font-mono text-base font-black ${chip.val}`}>
               ₹{liveChips[chip.key].toLocaleString('en-IN')}
             </span>
           </div>
@@ -899,7 +618,7 @@ export default function HisabXLScreen() {
       </div>
 
       {/* Guide strip (Boss ke 3 rules — UI English) */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 pt-2.5 text-[10.5px] font-semibold text-slate-500">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 pt-2.5 text-[10.5px] font-semibold text-slate-400">
         <span>1 unit = ₹10 (200 = ₹2,000)</span>
         <span className="text-slate-700">|</span>
         <span>New day = fresh sheet, all counters start at 0</span>
@@ -914,7 +633,7 @@ export default function HisabXLScreen() {
       {/* Day Tabs Bar (Excel sheet tabs — navy workbook look) */}
       {sortedSheetNames.length > 0 ? (
         <div className="px-4 pt-3">
-          <div className="flex items-stretch gap-0 overflow-x-auto rounded-t-xl border border-b-0 border-slate-800 bg-slate-900/90 px-1 pt-1">
+          <div className="flex items-stretch gap-0 overflow-x-auto rounded-t-xl border border-b-0 border-slate-700/60 bg-gradient-to-b from-slate-900 to-slate-950/70 px-1 pt-1 shadow-lg shadow-black/25">
             {sortedSheetNames.map((name) => {
               const isSelected = activeSheetName === name;
               const isTodayTab = selectedMonthId === realMonthId() && name === todayDayStr();
@@ -923,16 +642,16 @@ export default function HisabXLScreen() {
                   key={name}
                   onClick={() => setActiveSheetName(name)}
                   title={isTodayTab ? 'Aaj ka din — fresh 0 se start' : isDaySheetName(name) ? `Day ${name}` : 'Haste & Reminder'}
-                  className={`shrink-0 whitespace-nowrap rounded-t-lg border-r border-slate-800 px-3.5 py-1.5 text-xs font-semibold transition ${
+                  className={`shrink-0 whitespace-nowrap rounded-t-lg border-r border-slate-700/60 px-3.5 py-1.5 text-xs font-semibold transition ${
                     isSelected
-                      ? 'bg-slate-950 font-bold text-emerald-400 shadow-[inset_0_2px_0_0_rgb(16_185_129)]'
+                      ? 'bg-gradient-to-b from-slate-950 to-[#0b1430] font-bold text-emerald-300 shadow-[inset_0_2px_0_0_rgb(52_211_153)]'
                       : isTodayTab
                       ? 'text-indigo-300 hover:bg-slate-800/60'
                       : 'text-slate-400 hover:bg-slate-800/60'
                   }`}
                 >
                   {name}
-                  {isTodayTab && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-indigo-400 align-middle" />}
+                  {isTodayTab && <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400 align-middle shadow-[0_0_6px_rgba(129,140,248,0.9)]" />}
                 </button>
               );
             })}
@@ -949,7 +668,7 @@ export default function HisabXLScreen() {
       {/* FRESH DAY indicator — aaj ki sheet par (roz naya date 0 se start) */}
       {isTodaySheet && (
         <div className="px-4 pt-2">
-          <div className="flex flex-wrap items-center gap-x-3 rounded-lg border border-indigo-500/25 bg-indigo-500/10 px-3.5 py-2 text-[11px] font-bold text-indigo-300">
+          <div className="flex flex-wrap items-center gap-x-3 rounded-lg border border-indigo-400/30 bg-gradient-to-r from-indigo-500/20 via-indigo-500/5 to-transparent px-3.5 py-2 text-[11px] font-bold text-indigo-200 ring-1 ring-inset ring-indigo-300/10">
             <span className="font-black tracking-wider">FRESH DAY — DAY {dayNumForHeader}</span>
             <span className="font-semibold text-indigo-400/70">All counters started at 0 • Opening Cash In Hand 200 + 200 (chart)</span>
           </div>
@@ -973,8 +692,8 @@ export default function HisabXLScreen() {
       ) : (
         <div className="px-4 pb-8 pt-3">
           {/* Excel grid card — white sheet exactly like the file (bilkul XL), navy chrome ke andar */}
-          <div className="overflow-hidden rounded-b-xl rounded-tr-xl border border-slate-800 bg-white shadow-2xl">
-            <div className="overflow-auto bg-white" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+          <div className="overflow-hidden rounded-b-xl rounded-tr-xl border border-slate-700/70 bg-white shadow-2xl shadow-black/40">
+            <div className="xl-scroll overflow-auto bg-white" style={{ maxHeight: 'calc(100vh - 140px)' }}>
               <table
                 className="w-max select-text border-collapse bg-white"
                 style={{ minWidth: '100%', fontFamily: "'Comfortaa', 'Segoe UI', sans-serif" }}
@@ -1136,142 +855,6 @@ export default function HisabXLScreen() {
         </div>
       )}
 
-      {/* Upload Modal ("XL Upload" — purana mahina import) */}
-      {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md space-y-5 rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Upload className="h-5 w-5 text-indigo-400" />
-                <h3 className="text-sm font-bold text-white">Upload Hisab Excel File</h3>
-              </div>
-              <button
-                onClick={() => !uploading && setShowUploadModal(false)}
-                disabled={uploading}
-                className="text-slate-500 hover:text-slate-300 disabled:opacity-50"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              {/* Month Selection */}
-              <div>
-                <label className="font-semibold text-slate-300">Select Month</label>
-                <select
-                  value={uploadMonthNum}
-                  onChange={(e) => setUploadMonthNum(Number(e.target.value))}
-                  disabled={uploading}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs font-bold text-slate-100 focus:border-indigo-500 focus:outline-none"
-                >
-                  {MONTH_NAMES.map((name, index) => (
-                    <option key={name} value={index + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Year Selection */}
-              <div>
-                <label className="font-semibold text-slate-300">Select Year</label>
-                <input
-                  type="number"
-                  value={uploadYear}
-                  onChange={(e) => setUploadYear(Number(e.target.value))}
-                  disabled={uploading}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              {/* File Input */}
-              <div>
-                <label className="font-semibold text-slate-300">Excel File (.xlsx, .xls)</label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx, .xls"
-                  disabled={uploading}
-                  onChange={(e) => {
-                    const files = e.target.files;
-                    if (files && files.length > 0) {
-                      setSelectedFile(files[0]);
-                    }
-                  }}
-                  className="mt-1.5 w-full text-xs text-slate-400 file:mr-3 file:rounded-xl file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-indigo-500"
-                />
-                {selectedFile && (
-                  <p className="mt-1 text-[11px] font-medium text-emerald-400">
-                    ✓ Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                  </p>
-                )}
-              </div>
-
-              {/* Upload Progress Status */}
-              {uploading && (
-                <div className="flex items-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs font-semibold text-indigo-300">
-                  <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent"></div>
-                  <span>{uploadProgress || 'Uploading and parsing sheets...'}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
-              <button
-                type="button"
-                onClick={() => setShowUploadModal(false)}
-                disabled={uploading}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-700 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => processAndUploadFile(false)}
-                disabled={uploading || !selectedFile}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-500 disabled:opacity-50"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                <span>{uploading ? 'Processing...' : 'Upload & Process'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Overwrite Confirm Modal (in-app — sandbox-safe) */}
-      {overwritePrompt && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm space-y-4 rounded-2xl border border-amber-500/40 bg-slate-900 p-6 shadow-2xl">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-400" />
-              <h3 className="text-sm font-bold text-white">Mahina pehle se uploaded hai</h3>
-            </div>
-            <p className="text-xs text-slate-300">
-              <strong>{overwritePrompt.monthLabel}</strong> pehle se uploaded hai. Overwrite karne par us mahine ka purana data REPLACE ho jayega. Aage badhein?
-            </p>
-            <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
-              <button
-                type="button"
-                onClick={() => setOverwritePrompt(null)}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 transition hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOverwritePrompt(null);
-                  processAndUploadFile(true);
-                }}
-                className="rounded-xl bg-amber-600 px-5 py-2 text-xs font-bold text-white shadow transition hover:bg-amber-500"
-              >
-                Haan, Overwrite karein
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
