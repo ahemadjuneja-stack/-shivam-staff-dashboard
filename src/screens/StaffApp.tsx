@@ -102,6 +102,9 @@ export default function StaffApp({ onBackToDashboard, isBossPreview, previewUid 
   const [myStarEvents, setMyStarEvents] = useState<StarEvent[]>([]);
   const [myStarScore, setMyStarScore] = useState<number>(3.0);
 
+  // CREDIT POINTS (Boss Task 52): scale 1-300, stars points-based (60 = 1 star)
+  const [myCredit, setMyCredit] = useState<{ taskScore?: number; hoursScore?: number; dailyScore?: number }>({});
+
   // Sales Module State
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [selectedSheetId, setSelectedSheetId] = useState<string>('');
@@ -215,6 +218,15 @@ export default function StaffApp({ onBackToDashboard, isBossPreview, previewUid 
       setMyStarEvents(list);
       setMyStarScore(total);
     }, (err) => console.warn('events error:', err));
+    return () => unsub();
+  }, [staffUid]);
+
+  // 4b. Fetch My Credit Points (Boss Task 52) — display + stars isi se
+  useEffect(() => {
+    if (!staffUid) return;
+    const unsub = onSnapshot(doc(db, 'credit_points', staffUid), (snap) => {
+      setMyCredit(snap.exists() ? (snap.data() as { taskScore?: number; hoursScore?: number; dailyScore?: number }) : {});
+    }, (err) => console.warn('credit_points error:', err));
     return () => unsub();
   }, [staffUid]);
 
@@ -879,9 +891,19 @@ export default function StaffApp({ onBackToDashboard, isBossPreview, previewUid 
         {activeTab === 'stars' && (
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center space-y-2 shadow-lg">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">My Current Star Rating</p>
-              <h2 className="text-4xl font-black text-amber-400 font-mono">★ {myStarScore.toFixed(1)}</h2>
-              <p className="text-[11px] text-slate-400">Base Rating: 3.0 ★ • Verified work logs se stars badhte hain</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">My Credit Points</p>
+              <h2 className="text-4xl font-black text-amber-400 font-mono">
+                {Math.max(1, Math.min(300, Math.round((Number(myCredit.taskScore) || 0) + (Number(myCredit.hoursScore) || 0) + (Number(myCredit.dailyScore) || 0))))}
+                <span className="text-base text-slate-500"> / 300</span>
+              </h2>
+              <div className="flex items-center justify-center gap-1">
+                {[1, 2, 3, 4, 5].map((i) => {
+                  const total = Math.max(1, Math.min(300, Math.round((Number(myCredit.taskScore) || 0) + (Number(myCredit.hoursScore) || 0) + (Number(myCredit.dailyScore) || 0))));
+                  const stars = Math.max(1, Math.min(5, Math.floor(total / 60)));
+                  return <span key={i} className={`text-xl ${i <= stars ? 'text-amber-400' : 'text-slate-700'}`}>★</span>;
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400">Every 60 points = 1 star • 300 points = 5 stars • stars auto-adjust with your points</p>
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-lg space-y-2.5">

@@ -22,6 +22,7 @@ interface TaskItem {
 interface CreditPoints {
   taskScore?: number;
   hoursScore?: number;
+  dailyScore?: number;
 }
 
 interface AttendanceDoc {
@@ -36,7 +37,7 @@ interface PunchRecordItem {
 
 export default function StaffSpace({ currentUser, userProfile, onLogout }: StaffSpaceProps) {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [creditPoints, setCreditPoints] = useState<CreditPoints>({ taskScore: 0, hoursScore: 0 });
+  const [creditPoints, setCreditPoints] = useState<CreditPoints>({ taskScore: 0, hoursScore: 0, dailyScore: 0 });
   const [isOnDuty, setIsOnDuty] = useState<boolean>(false);
   const [todayPunches, setTodayPunches] = useState<PunchRecordItem[]>([]);
 
@@ -63,7 +64,7 @@ export default function StaffSpace({ currentUser, userProfile, onLogout }: Staff
       if (docSnap.exists()) {
         setCreditPoints(docSnap.data() as CreditPoints);
       } else {
-        setCreditPoints({ taskScore: 30, hoursScore: 20 }); // default base if not present
+        setCreditPoints({ taskScore: 30, hoursScore: 20, dailyScore: 0 }); // default base if not present
       }
     }, (err) => console.warn('Credit points listener error:', err));
     return () => unsub();
@@ -102,8 +103,10 @@ export default function StaffSpace({ currentUser, userProfile, onLogout }: Staff
 
   const taskScore = Number(creditPoints.taskScore || 0);
   const hoursScore = Number(creditPoints.hoursScore || 0);
-  const rawTotal = taskScore + hoursScore;
-  const totalScore = Math.max(0, Math.min(100, rawTotal));
+  const dailyScore = Number(creditPoints.dailyScore || 0);
+  const rawTotal = taskScore + hoursScore + dailyScore;
+  // BOSS Task 52: credit scale 1-300 (staff app jaisa) — floor 1, max 300
+  const totalScore = Math.max(1, Math.min(300, Math.round(rawTotal)));
 
   const firstIn = todayPunches.find(p => p.type === 'in');
   const lastOut = [...todayPunches].reverse().find(p => p.type === 'out');
@@ -252,14 +255,14 @@ export default function StaffSpace({ currentUser, userProfile, onLogout }: Staff
 
               <div className="mt-6 flex flex-col items-center justify-center text-center space-y-3">
                 <div className="text-4xl font-black font-mono text-amber-400 flex items-center gap-1">
-                  <span>⭐</span> {totalScore} <span className="text-sm text-slate-500 font-normal">/ 100</span>
+                  <span>⭐</span> {totalScore} <span className="text-sm text-slate-500 font-normal">/ 300</span>
                 </div>
                 
                 {/* Progress bar */}
                 <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden border border-slate-700">
                   <div 
                     className="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${totalScore}%` }}
+                    style={{ width: `${Math.min(100, (totalScore / 300) * 100)}%` }}
                   />
                 </div>
 

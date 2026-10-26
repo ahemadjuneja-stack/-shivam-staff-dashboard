@@ -19,10 +19,20 @@ import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer, UserPlus, P
 import StaffApp from './StaffApp';
 import { registerStaff, updateStaffDetails, changeStaffPin, deleteStaff } from '../staffAdmin';
 
+// BOSS Task 52 (2026-10-26): credit scale 1-300 — display "125/300".
+// Stars POINTS-BASED: har 60 points = 1 star, 300 = 5 stars (staff app jaisa).
+const CREDIT_MAX = 300;
+const PTS_PER_STAR = 60;
+const creditStars = (total: number) => Math.max(1, Math.min(5, Math.floor((Number(total) || 0) / PTS_PER_STAR)));
+
 export default function WorkersScreen() {
   const [workers, setWorkers] = useState<UserProfile[]>([]);
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
   const [starScores, setStarScores] = useState<{ [uid: string]: number }>({});
+  // CREDIT TOTALS (Boss Task 52): credit_points collection — har staff ka
+  // total (task+hours+daily, 1-300 clamp). List Star column + detail panel
+  // ke stars isi se chalte hain — credit badle to stars APNE AAP adjust.
+  const [creditTotals, setCreditTotals] = useState<Record<string, number>>({});
   const [selectedWorker, setSelectedWorker] = useState<UserProfile | null>(null);
   const [previewWorker, setPreviewWorker] = useState<UserProfile | null>(null);
 
@@ -312,6 +322,21 @@ export default function WorkersScreen() {
       snapshot.forEach((d) => list.push({ id: d.id, ...(d.data() as Omit<WorkLog, 'id'>) }));
       setWorkLogs(list);
     });
+    return () => unsub();
+  }, []);
+
+  // 2b. CREDIT TOTALS (Boss Task 52): credit_points collection live —
+  // total = task+hours+daily (1-300 clamp), stars creditStars(total) se.
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'credit_points'), (snap) => {
+      const m: Record<string, number> = {};
+      snap.docs.forEach((d) => {
+        const v = d.data() as { taskScore?: number; hoursScore?: number; dailyScore?: number };
+        const raw = (Number(v.taskScore) || 0) + (Number(v.hoursScore) || 0) + (Number(v.dailyScore) || 0);
+        m[d.id] = Math.max(1, Math.min(CREDIT_MAX, Math.round(raw)));
+      });
+      setCreditTotals(m);
+    }, () => {});
     return () => unsub();
   }, []);
 
@@ -641,8 +666,10 @@ export default function WorkersScreen() {
             </thead>
             <tbody className="divide-y divide-slate-800/70">
               {workers.map((w) => {
-                const score = starScores[w.uid] !== undefined ? starScores[w.uid] : 3.0;
-                const isUnderperforming = score < 2.0;
+                const hasCredit = creditTotals[w.uid] !== undefined;
+                const cTotal = hasCredit ? creditTotals[w.uid] : 0;
+                const cStars = creditStars(cTotal);
+                const isUnderperforming = hasCredit && cStars <= 2;
                 const roleDef = getRoleDefinition(w.role);
                 const openLog = openOutside.find((l) => l.uid === w.uid);
                 const elapsedMs = openLog ? Date.now() - openLog.fromAt : 0;
@@ -724,8 +751,9 @@ export default function WorkersScreen() {
                     </td>
                     <td className="px-2.5 py-1.5 whitespace-nowrap">
                       <span className={`font-bold font-mono text-[11.5px] ${isUnderperforming ? 'text-rose-400' : 'text-amber-400'}`}>
-                        ★ {score.toFixed(1)}
+                        ★ {cStars} <span className="text-slate-500">/ 5</span>
                       </span>
+                      <div className="text-[9.5px] font-semibold text-slate-500">{cTotal}/{CREDIT_MAX} pts</div>
                       {isUnderperforming && (
                         <span className="ml-2 text-[10px] bg-rose-500/10 text-rose-300 border border-rose-500/20 px-1.5 py-0.5 rounded">
                           Warning
@@ -775,7 +803,8 @@ export default function WorkersScreen() {
       {/* STAFF DETAIL PANEL — PC FULL VIEW (Boss order: popup poori screen me) */}
       {detailStaff && (() => {
         const dRoleDef = getRoleDefinition(detailStaff.role);
-        const dScore = starScores[detailStaff.uid] !== undefined ? starScores[detailStaff.uid] : 3.0;
+        const dTotal = creditTotals[detailStaff.uid] !== undefined ? creditTotals[detailStaff.uid] : 0;
+        const dStars = creditStars(dTotal);
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/97 backdrop-blur-md overflow-y-auto">
             <div className="min-h-full w-full flex flex-col">
@@ -821,8 +850,9 @@ export default function WorkersScreen() {
                       <p className="text-sm text-slate-100 mt-1">{detailStaff.city || 'Main'}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Star Rating</p>
-                      <p className="font-bold text-amber-400 text-lg mt-0.5">★ {dScore.toFixed(1)}</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Credit Stars</p>
+                      <p className="font-bold text-amber-400 text-lg mt-0.5">★ {dStars} <span className="text-slate-500 text-sm">/ 5</span></p>
+                      <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{dTotal}/{CREDIT_MAX} credit points — stars auto-adjust</p>
                     </div>
                     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
                       <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Registered On</p>
