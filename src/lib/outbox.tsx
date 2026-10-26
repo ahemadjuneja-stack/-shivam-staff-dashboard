@@ -65,6 +65,38 @@ export async function obSet(
   }
 }
 
+export async function obSetPath(
+  segs: string[],
+  payload: Record<string, unknown>,
+  opts?: { merge?: boolean; opId?: string }
+) {
+  const opId = opts?.opId || newOpId();
+  // journal me col = slash-path (replay doc(db, col, docId) valid odd-segment doc banta hai)
+  const entry: OutboxEntry = {
+    opId,
+    col: segs.slice(0, -1).join('/'),
+    docId: segs[segs.length - 1],
+    payload: { ...payload, opId },
+    merge: opts?.merge !== false,
+    at: Date.now(),
+    tries: 0
+  };
+  journalPush(entry); // 1. JOURNAL FIRST
+  notify();
+  try {
+    // 2. Firestore write — subcollection path (hisab/{monthId}/sheets/{name})
+    await withTimeout(
+      setDoc(doc(db, segs[0], ...segs.slice(1)), entry.payload!, { merge: entry.merge }),
+      WRITE_TIMEOUT_MS
+    );
+    journalRemove(opId); // 3. server ack -> journal clear
+    notify();
+  } catch {
+    // offline/timeout — journal me safe, flush replay karega
+    notify();
+  }
+}
+
 export async function obDel(col: string, docId: string) {
   const entry: OutboxEntry = { opId: newOpId('obd'), col, docId, payload: undefined, merge: false, at: Date.now(), tries: 0 };
   journalPush(entry);

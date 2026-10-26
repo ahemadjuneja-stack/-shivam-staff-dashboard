@@ -29,6 +29,7 @@ export interface MonthDoc {
   createdBy?: string;
   closed?: boolean;
   sheetNames: string[];
+  synthetic?: boolean; // Task 70: local auto-created month (Firestore doc abhi sync nahi hua)
 }
 
 export interface ComputedChips {
@@ -982,3 +983,150 @@ export const CANON_INDEX: (number | null)[][] = CANON_INDEX_RLE.split(';').map((
 );
 
 export const CANON_COL_WIDTHS_PX: number[] = [123, 77, 93, 15, 34, 68, 192, 71, 41, 60, 71, 15, 34, 153, 62, 15, 71, 51, 103, 160, 58, 93, 58, 168, 63, 62, 93, 103, 19];
+
+// ============================================================
+// NATIVE TEMPLATE BUILDERS (Task 70 — Boss order: home screen BILKUL XL jaisa,
+// upload ke bina naya month khud banega, roz naya date 0 se start)
+// Structure EXACT boss ke demo CHART COPY.xlsx sheet "1" jaisa (dump-verified):
+// headers, department details box, presets E/M (dept 1|2) + Q (parcel modes),
+// P1=25%, D1=dayNo — computed cells (J,K,Y,AD..AK,B4,B6,B12,B14,B16,AH53..)
+// khali chhode hain: formula engine unhe LIVE banata hai (fresh day = sab 0).
+// ============================================================
+
+// Demo file ke EXACT 20 merges
+export const DAY_SHEET_MERGES: string[] = [
+  'A1:B1', 'D1:E1',
+  'A2:A3', 'B2:B3', 'C2:C3',
+  'A4:A5', 'B4:B5', 'C4:C5',
+  'A6:A7', 'B6:B7', 'C6:C7',
+  'A12:A13', 'B12:B13', 'C12:C13',
+  'A14:A15', 'B14:B15', 'C14:C15',
+  'A16:A17', 'B16:B17', 'C16:C17'
+];
+
+// 37 col widths (wch): A..AC = CANON px/7, AD..AK helper cols patli
+export const DAY_SHEET_COLS_WCH: (number | null)[] = [
+  ...CANON_COL_WIDTHS_PX.map((px) => Math.max(4, Math.round(px / 7))),
+  6, 6, 6, 6, 9, 9, 9, 9
+];
+
+export const ALL_DAY_SHEET_NAMES: string[] = Array.from({ length: 31 }, (_, i) => String(i + 1));
+export const REMINDER_SHEET_NAME = 'Reminder';
+export const ALL_SHEET_NAMES: string[] = [...ALL_DAY_SHEET_NAMES, REMINDER_SHEET_NAME];
+
+// Parcel mode presets — demo sheet "1" ke exact row ranges (Q column)
+const Q_PRESETS: { from: number; to: number; mode: string }[] = [
+  { from: 1, to: 9, mode: 'Transport' },   // R2..R10
+  { from: 10, to: 15, mode: 'Courior' },   // R11..R16
+  { from: 16, to: 19, mode: 'In Hand' },   // R17..R20
+  { from: 20, to: 23, mode: 'Other Party' }, // R21..R24
+  { from: 24, to: 25, mode: 'Riksha' }     // R25..R26
+];
+
+export interface TemplateSheet {
+  grid: CellValue[][];
+  merges: string[];
+  cols: (number | null)[];
+  styleTable?: Record<string, unknown>[];
+  styleIndex?: (number | null)[][];
+}
+
+// Ek din ki FRESH sheet — bilkul chart ke khali page jaisi (0 se start)
+export function buildDaySheetTemplate(dayNo: number): TemplateSheet {
+  const grid: CellValue[][] = Array.from({ length: 53 }, () => Array<CellValue>(37).fill(null));
+
+  // Row 1 — headers (demo sheet "1" ke exact labels)
+  grid[0][0] = 'department details';
+  grid[0][3] = dayNo; // D1 = din ka number
+  grid[0][5] = 'Mode';
+  grid[0][6] = 'Name Or Bill No.';
+  grid[0][7] = 'Bill Amt';
+  grid[0][8] = 'Less';
+  grid[0][9] = 'Less Amt.';
+  grid[0][10] = 'Net Amt';
+  grid[0][13] = 'Cash Given';
+  grid[0][14] = 'Amount';
+  grid[0][15] = 25; // P1 — aangadiya % (Boss edit kar sakta hai)
+  grid[0][16] = 'Mode';
+  grid[0][17] = 'Dipartment';
+  grid[0][18] = 'City';
+  grid[0][19] = 'Party';
+  grid[0][20] = 'CO';
+  grid[0][21] = 'IM';
+  grid[0][22] = 'HG';
+  grid[0][23] = 'Bill In';
+  grid[0][24] = 'Bill Amt.';
+  grid[0][25] = 'Status';
+  grid[0][26] = 'CR.';
+  grid[0][27] = 'Tra.';
+  grid[0][33] = 'Cash 1no';
+  grid[0][34] = 'Recipt 1no';
+  grid[0][35] = 'Csah 2no';
+  grid[0][36] = 'Recipt 2no';
+
+  // Row 2 — dept names + L2 marker (demo jaisa)
+  grid[1][1] = 'Cosmetic';
+  grid[1][2] = 'Immitation';
+  grid[1][11] = 1;
+
+  // Rows 2..50 (r=1..49): dept presets E/M + parcel mode presets Q
+  for (let r = 1; r <= 49; r++) {
+    const dept1 = r <= 19; // R2..R20 = dept 1 (Cosmetic), R21..R50 = dept 2 (Immitation)
+    grid[r][4] = dept1 ? 1 : 2;  // E — department
+    grid[r][12] = dept1 ? 1 : 2; // M — department (office cash given side)
+    for (const p of Q_PRESETS) {
+      if (r >= p.from && r <= p.to) grid[r][16] = p.mode; // Q — parcel mode
+    }
+  }
+
+  return { grid, merges: DAY_SHEET_MERGES, cols: DAY_SHEET_COLS_WCH };
+}
+
+// Reminder sheet — demo ke exact 8 columns (Haste/City/Party Name/Date/Amount/Vayda Date/Note/Status)
+export const REMINDER_COLS_WCH: (number | null)[] = [16, 12, 24, 11, 11, 12, 28, 11, null, null, null];
+
+export function buildReminderTemplate(): TemplateSheet {
+  const rows = 95; // demo file jaisa (1 header + 94 khali rows)
+  const cols = 11;
+  const grid: CellValue[][] = Array.from({ length: rows }, () => Array<CellValue>(cols).fill(null));
+  grid[0][0] = 'Haste';
+  grid[0][1] = 'City';
+  grid[0][2] = 'Party Name';
+  grid[0][3] = 'Date';
+  grid[0][4] = 'Amount';
+  grid[0][5] = 'Vayda Date';
+  grid[0][6] = 'Note';
+  grid[0][7] = 'Status';
+
+  // Navy header style (dashboard theme match)
+  const styleTable = [
+    {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FF073763' } },
+      font: { name: 'Comfortaa', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+      alignment: { horizontal: 'center' }
+    }
+  ];
+  const styleIndex: (number | null)[][] = Array.from({ length: rows }, (_, r) =>
+    r === 0 ? Array<number | null>(cols).fill(0) : Array<number | null>(cols).fill(null)
+  );
+
+  return { grid, merges: [], cols: REMINDER_COLS_WCH, styleTable, styleIndex };
+}
+
+// Template sheet ko poore SheetData payload me convert (Firestore/outbox doc ke liye)
+export function templateToSheetData(name: string, tpl: TemplateSheet, isDay: boolean): SheetData {
+  const out: SheetData = {
+    name,
+    grid: tpl.grid,
+    merges: tpl.merges,
+    cols: tpl.cols
+  };
+  if (isDay) {
+    out.styleTable = CANON_TABLE as unknown as Record<string, unknown>[];
+    out.styleIndex = CANON_INDEX;
+  } else {
+    if (tpl.styleTable) out.styleTable = tpl.styleTable;
+    if (tpl.styleIndex) out.styleIndex = tpl.styleIndex;
+  }
+  return out;
+}
