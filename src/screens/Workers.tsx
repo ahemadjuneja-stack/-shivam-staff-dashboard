@@ -6,12 +6,13 @@ import {
   onSnapshot,
   doc,
   updateDoc,
-  addDoc
+  addDoc,
+  setDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, WorkLog, StarEvent, UserRole, OutsideLog } from '../types';
 import { ROLES, getRoleDefinition } from '../roles';
-import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer, UserPlus, Pencil, Trash2 } from 'lucide-react';
+import { Check, AlertCircle, X, Shield, Sparkles, Smartphone, Timer, UserPlus, Pencil, Trash2, UserCheck } from 'lucide-react';
 import StaffApp from './StaffApp';
 import { registerStaff, updateStaffDetails, changeStaffPin, deleteStaff } from '../staffAdmin';
 
@@ -99,6 +100,11 @@ export default function WorkersScreen() {
   const [staffToDelete, setStaffToDelete] = useState<UserProfile | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // PENDING REGISTRATION APPROVALS (Boss order: verification approvals Staff
+  // Management ke andar hi ho — alag tab nahi). Approvals.tsx ka logic merged.
+  const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
+  const [selectedRoles, setSelectedRoles] = useState<{ [uid: string]: UserRole }>({});
 
   const openDetail = (w: UserProfile) => setDetailStaff(w);
 
@@ -209,6 +215,30 @@ export default function WorkersScreen() {
     }
   };
 
+  // Approve / reject a pending self-registration (merged from Approvals screen)
+  const handleApproval = async (user: UserProfile, approve: boolean) => {
+    const chosenRole: UserRole = selectedRoles[user.uid] || 'worker';
+    const updateData = approve
+      ? { status: 'active', role: chosenRole, approvedAt: Date.now() }
+      : { status: 'rejected' };
+    try {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), updateData);
+      } catch {
+        await setDoc(doc(db, 'users', user.uid), { ...user, ...updateData }, { merge: true });
+      }
+      showToast(
+        approve
+          ? `${user.name} approved as ${chosenRole === 'sales' ? 'Salesman' : chosenRole === 'worker' ? 'Staff' : chosenRole.toUpperCase()} — they can log in now.`
+          : `Registration rejected for ${user.name}.`,
+        approve ? 'success' : 'success'
+      );
+      setPendingUsers((prev) => prev.filter((u) => u.uid !== user.uid));
+    } catch (err: any) {
+      showToast(`Approval failed: ${err?.message || ''}`, 'error');
+    }
+  };
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
@@ -223,6 +253,23 @@ export default function WorkersScreen() {
       const list: UserProfile[] = [];
       snapshot.forEach((d) => list.push({ uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) }));
       setWorkers(list);
+    });
+    return () => unsub();
+  }, []);
+
+  // 1b. Pending Registration Requests (self signups from the staff app)
+  useEffect(() => {
+    const q = query(collection(db, 'users'), where('status', '==', 'pending'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const list: UserProfile[] = [];
+      const rolesMap: { [uid: string]: UserRole } = {};
+      snapshot.forEach((d) => {
+        const user = { uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) };
+        list.push(user);
+        rolesMap[user.uid] = user.role === 'sales' || user.role === 'worker' ? user.role : 'worker';
+      });
+      setPendingUsers(list);
+      setSelectedRoles((prev) => ({ ...rolesMap, ...prev }));
     });
     return () => unsub();
   }, []);
@@ -403,6 +450,82 @@ export default function WorkersScreen() {
         </div>
       )}
 
+      {/* PENDING REGISTRATION REQUESTS (Boss: verification approvals Staff Management ke andar) */}
+      {pendingUsers.length > 0 && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] p-5 shadow-lg">
+          <div className="flex items-center justify-between pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-amber-400" />
+                Registration Requests ({pendingUsers.length})
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                New staff signed up from the mobile app — pick a role and approve. They appear in the directory below instantly.
+              </p>
+            </div>
+            <span className="rounded-full bg-amber-500/15 px-3 py-1 text-[10px] font-black text-amber-300 border border-amber-500/30 animate-pulse">
+              ACTION NEEDED
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {pendingUsers.map((u) => {
+              const currentRole: UserRole = selectedRoles[u.uid] || 'worker';
+              return (
+                <div key={u.uid} className="rounded-xl border border-slate-800 bg-slate-900 p-4 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-9 w-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300 font-black text-sm">
+                          {String(u.name || 'S').charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-white">{u.name}</h4>
+                          <p className="text-[11px] font-mono text-indigo-400">{u.mobile}</p>
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[9px] font-black text-amber-400 border border-amber-500/20">
+                        PENDING
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[10.5px] text-slate-400">
+                      City: <strong className="text-slate-200">{u.city || 'Head Office'}</strong>
+                      {' · '}Registered: {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN') : 'Just now'}
+                    </p>
+                    <div className="mt-2.5">
+                      <label className="text-[9.5px] font-black uppercase tracking-wider text-slate-500">Assign Role</label>
+                      <select
+                        value={currentRole}
+                        onChange={(e) => setSelectedRoles((prev) => ({ ...prev, [u.uid]: e.target.value as UserRole }))}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-bold text-white focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="worker">Staff — tasks, duty, credit score</option>
+                        <option value="sales">Salesman — city XL sheets, no location lock</option>
+                        <option value="manager">Manager — full dashboard access</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => handleApproval(u, true)}
+                      className="rounded-lg bg-emerald-600 py-2 text-[11px] font-bold text-white shadow hover:bg-emerald-500 transition"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleApproval(u, false)}
+                      className="rounded-lg border border-rose-500/30 bg-rose-500/10 py-2 text-[11px] font-bold text-rose-400 hover:bg-rose-500/20 transition"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Pending Work Logs Section */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-lg">
         <h3 className="text-sm font-bold text-white mb-3">Pending Work Logs to Verify ({workLogs.length})</h3>
@@ -441,9 +564,10 @@ export default function WorkersScreen() {
         )}
       </div>
 
-      {/* Active Staff Roster & Leaderboard */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-lg">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 gap-2">
+      {/* Active Staff Roster & Leaderboard — FULL WIDTH SLIM STRIPS (Boss order) */}
+      <div className="hisab-fullbleed border-y border-slate-800 bg-slate-900/60 shadow-lg">
+        <div className="px-4 lg:px-8 py-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2.5 gap-2">
           <div>
             <h3 className="text-sm font-bold text-white">Active Staff Directory ({workers.length})</h3>
             <p className="text-[11px] text-slate-400">
@@ -473,19 +597,19 @@ export default function WorkersScreen() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-800/60 uppercase text-[10px] text-slate-400">
+          <table className="w-full text-left text-[11px] text-slate-300">
+            <thead className="bg-slate-800/40 uppercase text-[9px] text-slate-400">
               <tr>
-                <th className="p-3">Staff Name</th>
-                <th className="p-3">Stopwatch</th>
-                <th className="p-3">Mobile</th>
-                <th className="p-3">City</th>
-                <th className="p-3">Role</th>
-                <th className="p-3">Star Rating</th>
-                <th className="p-3 text-right">Actions</th>
+                <th className="px-2.5 py-1.5">Staff Name</th>
+                <th className="px-2.5 py-1.5">Stopwatch</th>
+                <th className="px-2.5 py-1.5">Mobile</th>
+                <th className="px-2.5 py-1.5">City</th>
+                <th className="px-2.5 py-1.5">Role</th>
+                <th className="px-2.5 py-1.5">Star</th>
+                <th className="px-2.5 py-1.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-slate-800/70">
               {workers.map((w) => {
                 const score = starScores[w.uid] !== undefined ? starScores[w.uid] : 3.0;
                 const isUnderperforming = score < 2.0;
@@ -503,7 +627,7 @@ export default function WorkersScreen() {
                     onClick={() => openDetail(w)}
                     className={`hover:bg-slate-800/30 transition cursor-pointer ${openLog ? 'bg-rose-500/[0.04]' : ''}`}
                   >
-                    <td className="p-3 font-bold text-white">
+                    <td className="px-2.5 py-1.5 font-bold text-white whitespace-nowrap">
                       {w.name}
                       {openLog && (
                         <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] font-black text-rose-300">
@@ -511,10 +635,10 @@ export default function WorkersScreen() {
                         </span>
                       )}
                     </td>
-                    <td className="p-3">
+                    <td className="px-2.5 py-1.5">
                       {openLog ? (
-                        <div className="flex flex-col gap-1.5">
-                          <span className={`inline-flex w-fit items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[13px] font-black tabular-nums ${
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex w-fit items-center gap-1.5 rounded-lg border px-2 py-0.5 font-mono text-[11px] font-black tabular-nums ${
                             over
                               ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300'
                               : typeof openLog.allowedMin === 'number'
@@ -560,16 +684,16 @@ export default function WorkersScreen() {
                         <span className="text-slate-600">—</span>
                       )}
                     </td>
-                    <td className="p-3 font-mono text-slate-400">{w.mobile}</td>
-                    <td className="p-3">{w.city || 'Head Office'}</td>
-                    <td className="p-3">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-bold text-[10px] border ${roleDef.badgeClass}`}>
+                    <td className="px-2.5 py-1.5 font-mono text-[10.5px] text-slate-400 whitespace-nowrap">{w.mobile}</td>
+                    <td className="px-2.5 py-1.5 whitespace-nowrap">{w.city || 'Head Office'}</td>
+                    <td className="px-2.5 py-1.5">
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-bold text-[9.5px] border ${roleDef.badgeClass}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${roleDef.dotColor}`} />
                         {roleDef.label}
                       </span>
                     </td>
-                    <td className="p-3">
-                      <span className={`font-bold font-mono text-sm ${isUnderperforming ? 'text-rose-400' : 'text-amber-400'}`}>
+                    <td className="px-2.5 py-1.5 whitespace-nowrap">
+                      <span className={`font-bold font-mono text-[11.5px] ${isUnderperforming ? 'text-rose-400' : 'text-amber-400'}`}>
                         ★ {score.toFixed(1)}
                       </span>
                       {isUnderperforming && (
@@ -578,12 +702,12 @@ export default function WorkersScreen() {
                         </span>
                       )}
                     </td>
-                    <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-2.5 py-1.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
                         {/* Preview Staff App Button */}
                         <button
                           onClick={(e) => { e.stopPropagation(); setPreviewWorker(w); }}
-                          className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 hover:text-white transition flex items-center gap-1"
+                          className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20 hover:text-white transition flex items-center gap-1"
                           title="Preview Staff Mobile App as this user"
                         >
                           <Smartphone className="h-3 w-3 text-emerald-400" />
@@ -593,7 +717,7 @@ export default function WorkersScreen() {
                         {/* Change Role Button */}
                         <button
                           onClick={(e) => { e.stopPropagation(); openRoleChangeModal(w); }}
-                          className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition flex items-center gap-1"
+                          className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition flex items-center gap-1"
                           title="Change Staff Role"
                         >
                           <Shield className="h-3 w-3 text-indigo-400" />
@@ -603,9 +727,9 @@ export default function WorkersScreen() {
                         {/* Adjust Stars Button (untouched) */}
                         <button
                           onClick={(e) => { e.stopPropagation(); setSelectedWorker(w); }}
-                          className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-semibold hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-0.5 text-[10px] font-semibold hover:bg-slate-700 text-slate-300 hover:text-white transition"
                         >
-                          Adjust Stars
+                          Stars
                         </button>
                       </div>
                     </td>
@@ -615,102 +739,162 @@ export default function WorkersScreen() {
             </tbody>
           </table>
         </div>
+        </div>
       </div>
 
-      {/* STAFF DETAIL PANEL (Boss order 2026-10-26: strip click par andar sare options) */}
+      {/* STAFF DETAIL PANEL — PC FULL VIEW (Boss order: popup poori screen me) */}
       {detailStaff && (() => {
         const dRoleDef = getRoleDefinition(detailStaff.role);
         const dScore = starScores[detailStaff.uid] !== undefined ? starScores[detailStaff.uid] : 3.0;
         return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-            onClick={() => setDetailStaff(null)}
-          >
-            <div
-              className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-11 w-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-indigo-600/30">
+          <div className="fixed inset-0 z-50 bg-slate-950/97 backdrop-blur-md overflow-y-auto">
+            <div className="min-h-full w-full flex flex-col">
+              {/* Top Bar */}
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-6 lg:px-12 py-4 backdrop-blur">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-600/30">
                     {String(detailStaff.name || 'S').charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">{detailStaff.name}</h3>
-                    <span className={`mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] border ${dRoleDef.badgeClass}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${dRoleDef.dotColor}`} />
-                      {dRoleDef.label}
-                    </span>
+                    <h3 className="text-lg font-bold text-white">{detailStaff.name}</h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] border ${dRoleDef.badgeClass}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${dRoleDef.dotColor}`} />
+                        {dRoleDef.label}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <button onClick={() => setDetailStaff(null)} className="text-slate-400 hover:text-white">
-                  <X className="h-4 w-4" />
+                <button
+                  onClick={() => setDetailStaff(null)}
+                  className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 hover:text-white transition"
+                  title="Close (Esc)"
+                >
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
-              {/* Details Grid */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mobile</p>
-                  <p className="font-mono text-slate-200 mt-0.5">{detailStaff.mobile || '—'}</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">City / Branch</p>
-                  <p className="text-slate-200 mt-0.5">{detailStaff.city || 'Main'}</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Star Rating</p>
-                  <p className="font-bold text-amber-400 mt-0.5">★ {dScore.toFixed(1)}</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Registered On</p>
-                  <p className="text-slate-200 mt-0.5">
-                    {detailStaff.createdAt ? new Date(detailStaff.createdAt).toLocaleDateString('en-IN') : '—'}
-                  </p>
-                </div>
-              </div>
+              {/* Body — details (left 2/3) + options (right 1/3) */}
+              <div className="flex-1 w-full px-6 lg:px-12 py-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left: Details */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Mobile</p>
+                      <p className="font-mono text-sm text-slate-100 mt-1">{detailStaff.mobile || '—'}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">City / Branch</p>
+                      <p className="text-sm text-slate-100 mt-1">{detailStaff.city || 'Main'}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Star Rating</p>
+                      <p className="font-bold text-amber-400 text-lg mt-0.5">★ {dScore.toFixed(1)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Registered On</p>
+                      <p className="text-sm text-slate-100 mt-1">
+                        {detailStaff.createdAt ? new Date(detailStaff.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </p>
+                    </div>
+                  </div>
 
-              {/* Options */}
-              <div className="space-y-2 pt-1">
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Staff Options</p>
-                <div className="grid grid-cols-2 gap-2">
+                  {/* Role access info */}
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+                      <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-amber-400" />
+                        Access with current role ({dRoleDef.label}):
+                      </span>
+                    </div>
+                    <ul className="mt-3 space-y-1.5">
+                      {dRoleDef.permissions.map((perm, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-slate-300 text-xs">
+                          <span className="text-emerald-400 font-bold shrink-0 mt-0.5">✓</span>
+                          <span>{perm}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Account meta */}
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Account Information</p>
+                    <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300">
+                      <p>Status: <span className="text-emerald-400 font-bold">Active</span></p>
+                      <p>Salesman XL Cities: <span className="font-bold text-slate-100">{detailStaff.xlCities?.length ? detailStaff.xlCities.join(', ') : '—'}</span></p>
+                      <p className="sm:col-span-2 font-mono text-[10px] text-slate-500 break-all">UID: {detailStaff.uid}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Options */}
+                <div className="space-y-2.5">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Staff Options</p>
                   <button
                     onClick={() => openEdit(detailStaff)}
-                    className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 py-2.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                    className="w-full rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-4 text-left transition hover:bg-indigo-500/20 flex items-center gap-3 group"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit Details
+                    <span className="h-10 w-10 rounded-xl bg-indigo-500/15 flex items-center justify-center shrink-0">
+                      <Pencil className="h-4 w-4 text-indigo-300" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-bold text-white">Edit Details</span>
+                      <span className="block text-[10.5px] text-slate-400">Name, city and login PIN</span>
+                    </span>
                   </button>
                   <button
                     onClick={() => { setDetailStaff(null); openRoleChangeModal(detailStaff); }}
-                    className="rounded-xl border border-purple-500/30 bg-purple-500/10 py-2.5 text-xs font-bold text-purple-300 hover:bg-purple-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                    className="w-full rounded-2xl border border-purple-500/30 bg-purple-500/10 px-4 py-4 text-left transition hover:bg-purple-500/20 flex items-center gap-3"
                   >
-                    <Shield className="h-3.5 w-3.5" />
-                    Change Role
+                    <span className="h-10 w-10 rounded-xl bg-purple-500/15 flex items-center justify-center shrink-0">
+                      <Shield className="h-4 w-4 text-purple-300" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-bold text-white">Change Role</span>
+                      <span className="block text-[10.5px] text-slate-400">Staff / Salesman / Manager — applies instantly</span>
+                    </span>
                   </button>
                   <button
                     onClick={() => { setDetailStaff(null); setSelectedWorker(detailStaff); }}
-                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 py-2.5 text-xs font-bold text-amber-300 hover:bg-amber-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                    className="w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-left transition hover:bg-amber-500/20 flex items-center gap-3"
                   >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Adjust Stars
+                    <span className="h-10 w-10 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
+                      <Sparkles className="h-4 w-4 text-amber-300" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-bold text-white">Adjust Stars</span>
+                      <span className="block text-[10.5px] text-slate-400">Manual star reward or penalty</span>
+                    </span>
                   </button>
                   <button
                     onClick={() => { setDetailStaff(null); setPreviewWorker(detailStaff); }}
-                    className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
+                    className="w-full rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-4 text-left transition hover:bg-emerald-500/20 flex items-center gap-3"
                   >
-                    <Smartphone className="h-3.5 w-3.5" />
-                    Preview App
+                    <span className="h-10 w-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
+                      <Smartphone className="h-4 w-4 text-emerald-300" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-bold text-white">Preview App</span>
+                      <span className="block text-[10.5px] text-slate-400">Open the staff phone simulator</span>
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => { setStaffToDelete(detailStaff); setDeleteConfirmText(''); setDetailStaff(null); }}
+                    className="w-full rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-4 text-left transition hover:bg-rose-500/20 flex items-center gap-3"
+                  >
+                    <span className="h-10 w-10 rounded-xl bg-rose-500/15 flex items-center justify-center shrink-0">
+                      <Trash2 className="h-4 w-4 text-rose-300" />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-bold text-rose-200">Delete Staff</span>
+                      <span className="block text-[10.5px] text-slate-400">Blocks login, frees the mobile number</span>
+                    </span>
                   </button>
                 </div>
-                <button
-                  onClick={() => { setStaffToDelete(detailStaff); setDeleteConfirmText(''); setDetailStaff(null); }}
-                  className="w-full rounded-xl border border-rose-500/30 bg-rose-500/10 py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 hover:text-white transition flex items-center justify-center gap-1.5"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete Staff
-                </button>
               </div>
             </div>
           </div>

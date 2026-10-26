@@ -10,7 +10,6 @@ import { auth, db } from './firebase';
 import {
   Table,
   Users,
-  CheckSquare,
   Activity,
   FileSpreadsheet,
   Settings,
@@ -22,7 +21,6 @@ import {
 } from 'lucide-react';
 
 import HisabXLScreen from './HisabXL';
-import ApprovalsScreen from './screens/Approvals';
 import WorkersScreen from './screens/Workers';
 import LiveScreen from './screens/Live';
 import HisabAdminScreen from './screens/HisabAdmin';
@@ -34,7 +32,7 @@ import SalesmanXL from './screens/SalesmanXL';
 import { UserProfile } from './types';
 import ShivamLogo from './components/ShivamLogo';
 
-type NavTab = 'hisabxl' | 'approvals' | 'workers' | 'live' | 'outside' | 'hisab' | 'settings';
+type NavTab = 'hisabxl' | 'workers' | 'live' | 'outside' | 'hisab' | 'settings';
 type SessionRole = 'manager' | 'staff' | 'salesman' | null;
 
 export default function App() {
@@ -127,7 +125,8 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time pending approvals count badge for sidebar
+  // Real-time pending registration count badge for the Staff Management tab
+  // (approvals are handled inside Staff Management now — no separate tab)
   useEffect(() => {
     if (!currentUser || sessionRole !== 'manager') return;
     const unsub = onSnapshot(
@@ -356,15 +355,10 @@ export default function App() {
       icon: <Table className="h-4 w-4 text-emerald-400" />
     },
     {
-      id: 'approvals' as NavTab,
-      title: 'Verifications & Approvals',
-      icon: <CheckSquare className="h-4 w-4 text-indigo-400" />,
-      badge: pendingCount > 0 ? pendingCount : null
-    },
-    {
       id: 'workers' as NavTab,
       title: 'Staff Management',
-      icon: <Users className="h-4 w-4 text-sky-400" />
+      icon: <Users className="h-4 w-4 text-sky-400" />,
+      badge: pendingCount > 0 ? pendingCount : null
     },
     {
       id: 'live' as NavTab,
@@ -393,8 +387,6 @@ export default function App() {
     switch (activeTab) {
       case 'hisabxl':
         return <HisabXLScreen />;
-      case 'approvals':
-        return <ApprovalsScreen />;
       case 'workers':
         return <WorkersScreen />;
       case 'live':
