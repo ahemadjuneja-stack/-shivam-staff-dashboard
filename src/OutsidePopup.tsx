@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, updateDoc, doc, where } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from './firebase';
 import { OutsideLog } from './types';
 import { elapsedMsOf } from './screens/Outside';
-import { MapPinOff, TimerReset, X } from 'lucide-react';
+import { MapPinOff, X } from 'lucide-react';
 
 // ============================================================
-// GLOBAL OUTSIDE POPUP (Boss order 2026-10-26):
-// "Shop par se koi bhi staff member on duty 100 mitter ke bahar jaye to
-//  dashboard par popup aana chahiye, ke kon bahar gaya hai, agar wo bina
-//  bataye gaya hai to points down honge"
-//
-// Staff app geofence OPEN event likhta hai (status:'open') — ye popup HAR
-// dashboard tab par turant aa jata hai (real-time). Manager yahin se
-// "bola hua time" (allowed minutes) set karta hai — STOPWATCH shuru
-// (sirf dashboard se timer lag sakta hai). Wapas aane par staff app khud
-// compare karega: on-time = +5, late = -4, bina-bataye = -5 (Boss 3-5 rule).
+// SIDE OUTSIDE-ALERT NOTIFICATIONS (Boss order 2026-10-27):
+// 1. Popup SCREEN BLOCK nahi karega — SIDE me notification stack
+//    (bottom-right, non-blocking — kaam me rukawat nahi)
+// 2. EK STAFF = EK POPUP (naam dedupe) — do log gaye to do cards,
+//    ek hi naam ke 5-5 popup KABHI nahi (count badge ×N dikhega)
+// 3. Popup SIRF TAB dikhe jab ALLOWED TIME KHATAM ho jaye —
+//    manager ne timing laga di aur waqt baaki hai = koi popup nahi.
+//    Timer set nahi hai to 15 min default grace ke baad hi dikhega.
+// 4. HAR REFRESH par wahi popup dobara NAHI aayega — dismiss
+//    localStorage me persist hota hai; naya outside event hi
+//    firse popup layega (purana dismiss hone ke baad bhi).
 // ============================================================
 
 const fmtElapsed = (ms: number): string => {
@@ -25,14 +26,37 @@ const fmtElapsed = (ms: number): string => {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 };
 
+const DEFAULT_GRACE_MIN = 15;
+const LS_KEY = 'ob-side-dismissed-v1'; // { [name]: dismissTimestampMs }
+
+type DismissMap = Record<string, number>;
+
+const loadDismissed = (): DismissMap => {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return {};
+    const p = JSON.parse(raw);
+    return p && typeof p === 'object' ? (p as DismissMap) : {};
+  } catch {
+    return {};
+  }
+};
+
+interface PersonAlert {
+  name: string;
+  freshCount: number;
+  latest: OutsideLog; // sabse naya over event (fromAt max)
+  worstElapsedMs: number; // in fresh over logs me max elapsed
+  anyPaused: boolean;
+  allowedMin: number; // latest log ka grace
+}
+
 export default function OutsideAlertPopup() {
   const [openLogs, setOpenLogs] = useState<OutsideLog[]>([]);
-  const [dismissed, setDismissed] = useState<string[]>([]);
+  const [dismissed, setDismissed] = useState<DismissMap>(() => loadDismissed());
   const [tick, setTick] = useState(0);
-  const [mins, setMins] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<string | null>(null);
 
-  // Live elapsed — har second update
+  // Live elapsed — har second update (frozen timer tick par bhi badhta nahi)
   useEffect(() => {
     const t = window.setInterval(() => setTick((x) => x + 1), 1000);
     return () => window.clearInterval(t);
@@ -49,159 +73,147 @@ export default function OutsideAlertPopup() {
     return () => unsub();
   }, []);
 
-  const visible = useMemo(
-    () => openLogs.filter((l) => l.id && !dismissed.includes(l.id!)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openLogs, dismissed, tick]
-  );
+  // OVER-LIMIT LOGS ONLY: elapsed > (allowedMin ?? 15 min) —
+  // timing set hai aur waqt baaki hai to popup BILKUL nahi.
+  // Paused (tour) log bhi tabhi dikhe jab uska frozen time grace cross karta ho.
+  const personAlerts = useMemo<PersonAlert[]>(() => {
+    const now = Date.now();
+    const byName = new Map<string, OutsideLog[]>();
+    for (const log of openLogs) {
+      const paused = typeof log.pausedAt === 'number';
+      const elapsedMs = elapsedMsOf(log, now);
+      const graceMin = typeof log.allowedMin === 'number' ? log.allowedMin : DEFAULT_GRACE_MIN;
+      if (elapsedMs <= graceMin * 60000) continue; // waqt baaki — koi popup nahi
+      const key = (log.name || 'Unknown').trim();
+      const arr = byName.get(key) || [];
+      arr.push(log);
+      byName.set(key, arr);
+    }
 
-  const setAllowedMin = async (log: OutsideLog) => {
-    if (!log.id) return;
-    const raw = Number(mins[log.id] || 15);
-    const allowedMin = Math.max(1, Math.min(240, Math.round(raw || 15)));
-    setBusy(log.id);
-    try {
-      await updateDoc(doc(db, 'outside_logs', log.id), {
-        allowedMin,
-        allowedSetAt: Date.now(),
-        allowedSetBy: auth.currentUser?.email || 'manager'
+    const out: PersonAlert[] = [];
+    byName.forEach((logs, name) => {
+      const dismissedAt = dismissed[name] || 0;
+      // Naya event hi popup layega: dismiss ke BAAD start hua log?
+      const fresh = logs.filter((l) => (l.fromAt || 0) > dismissedAt);
+      if (fresh.length === 0) return;
+      fresh.sort((a, b) => (b.fromAt || 0) - (a.fromAt || 0));
+      const worst = fresh.reduce((mx, l) => Math.max(mx, elapsedMsOf(l, now)), 0);
+      const latest = fresh[0];
+      out.push({
+        name,
+        freshCount: fresh.length,
+        latest,
+        worstElapsedMs: worst,
+        anyPaused: fresh.some((l) => typeof l.pausedAt === 'number'),
+        allowedMin: typeof latest.allowedMin === 'number' ? latest.allowedMin : DEFAULT_GRACE_MIN
       });
+    });
+    out.sort((a, b) => b.worstElapsedMs - a.worstElapsedMs);
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openLogs, dismissed, tick]);
+
+  const persistDismiss = (map: DismissMap) => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(map));
     } catch {
-      // silent — Outside Alerts screen se bhi set ho sakta hai
-    } finally {
-      setBusy(null);
+      // storage blocked — sirf session-level dismiss
     }
   };
 
-  if (visible.length === 0) return null;
+  const dismissPerson = (name: string) => {
+    setDismissed((prev) => {
+      const next = { ...prev, [name]: Date.now() };
+      persistDismiss(next);
+      return next;
+    });
+  };
+
+  const dismissAll = () => {
+    const now = Date.now();
+    setDismissed((prev) => {
+      const next = { ...prev };
+      for (const p of personAlerts) next[p.name] = now;
+      persistDismiss(next);
+      return next;
+    });
+  };
+
+  if (personAlerts.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-rose-500/40 bg-slate-900 shadow-2xl">
-        <div className="flex items-center gap-2.5 border-b border-rose-500/30 bg-rose-500/10 px-5 py-3.5">
-          <span className="relative flex h-3 w-3">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
-            <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500"></span>
-          </span>
-          <h3 className="text-sm font-black uppercase tracking-wider text-rose-300">
-            OUTSIDE ALERT ({visible.length})
-          </h3>
-          <button
-            onClick={() => setDismissed((d) => [...d, ...visible.map((v) => v.id!).filter(Boolean)])}
-            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
-            title="Dismiss (staff wapas aayega to record auto-close)"
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[350px] max-w-[calc(100vw-2rem)] flex-col gap-2.5">
+      {personAlerts.length > 1 && (
+        <button
+          onClick={dismissAll}
+          className="pointer-events-auto self-end rounded-lg border border-slate-600/70 bg-slate-900/95 px-3 py-1 text-[10px] font-bold text-slate-400 shadow-lg ring-1 ring-white/10 backdrop-blur transition hover:text-white"
+        >
+          Sab dismiss ({personAlerts.length})
+        </button>
+      )}
+
+      {personAlerts.map((p) => {
+        const totalMin = Math.round(p.worstElapsedMs / 60000);
+        const overByMin = Math.max(1, totalMin - p.allowedMin);
+        return (
+          <div
+            key={p.name}
+            className="pointer-events-auto overflow-hidden rounded-2xl border border-rose-500/40 bg-slate-900/95 shadow-2xl ring-1 ring-white/10 backdrop-blur-md"
           >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+            {/* Header — person + count + badges */}
+            <div className="flex items-center gap-2 border-b border-rose-500/25 bg-rose-500/10 px-3.5 py-2">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
+              </span>
+              <span className="truncate text-[13px] font-black text-white">{p.name}</span>
+              {p.freshCount > 1 && (
+                <span className="shrink-0 rounded-md border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-black text-rose-300">
+                  ×{p.freshCount}
+                </span>
+              )}
+              {p.anyPaused && (
+                <span className="shrink-0 rounded-md border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-black text-sky-300">
+                  TOUR PAUSE
+                </span>
+              )}
+              <button
+                onClick={() => dismissPerson(p.name)}
+                title="Dismiss — naya event aane par fir popup aayega"
+                className="ml-auto shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
 
-        <div className="max-h-[70vh] divide-y divide-slate-800 overflow-y-auto">
-          {visible.map((log) => {
-            const paused = typeof log.pausedAt === 'number';
-            const elapsedMs = elapsedMsOf(log, Date.now());
-            const over = !paused && typeof log.allowedMin === 'number' && elapsedMs > log.allowedMin * 60000;
-            return (
-              <div key={log.id} className="space-y-3 px-5 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[15px] font-black text-white">{log.name}</span>
-                      {paused && (
-                        <span className="rounded-md border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-black text-sky-300">
-                          PAUSED — TOUR
-                        </span>
-                      )}
-                    </div>
-                    <div className={`mt-0.5 text-[11px] font-semibold ${paused ? 'text-sky-300' : 'text-rose-300'}`}>
-                      {paused ? (
-                        <>Tour mode — {Math.round(elapsedMs / 60000)} min freeze. Role staff hote isi time se resume.</>
-                      ) : (
-                        <>Shop ke {Math.round(elapsedMs / 60000)} min se 100m+ BAHAR hai (on duty)</>
-                      )}
-                    </div>
-                  </div>
-                  <div className={`shrink-0 rounded-xl border px-3 py-2 text-center font-mono text-lg font-black tabular-nums ${
-                    paused
-                      ? 'border-sky-500/40 bg-sky-500/10 text-sky-300'
-                      : over
-                        ? 'animate-pulse border-rose-500/40 bg-rose-500/15 text-rose-300'
-                        : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-                  }`}>
-                    {fmtElapsed(elapsedMs)}
-                  </div>
-                </div>
-
-                {paused ? (
-                  <div className="rounded-xl border border-sky-500/25 bg-sky-500/5 px-3.5 py-2.5 text-[11.5px] font-semibold text-sky-300/90">
-                    Salesman role ON — stopwatch + timer dono FREEZE. Role staff wapas hote hi isi time se chalu hoga (pause time count nahi).
-                  </div>
-                ) : typeof log.allowedMin === 'number' ? (
-                  <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-3.5 py-2.5 text-[11.5px] font-semibold text-slate-300">
-                    Stopwatch set: <b className="text-white">{log.allowedMin} min</b> bola tha —
-                    {over ? (
-                      <span className="text-rose-300"> time OVER hai, wapas nahi aaya</span>
-                    ) : (
-                      <span className="text-emerald-300"> abhi {Math.max(0, Math.ceil(log.allowedMin - elapsedMs / 60000))} min baaki</span>
-                    )}
-                    . Wapas aane par points auto up/down honge.
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-3.5 py-3">
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300">
-                      <TimerReset className="h-3.5 w-3.5" />
-                      STOPWATCH TIMER SET KAREIN (bola hua time)
-                    </div>
-                    <div className="mt-2 flex items-center gap-2">
-                      {[10, 15, 20, 30].map((n) => (
-                        <button
-                          key={n}
-                          onClick={() => setMins((m) => ({ ...m, [log.id!]: String(n) }))}
-                          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-black transition ${
-                            Number(mins[log.id ?? ''] || 15) === n
-                              ? 'border-indigo-400 bg-indigo-500/20 text-indigo-200'
-                              : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
-                          }`}
-                        >
-                          {n}m
-                        </button>
-                      ))}
-                      <input
-                        type="number"
-                        min={1}
-                        max={240}
-                        value={mins[log.id ?? ''] ?? '15'}
-                        onChange={(e) => setMins((m) => ({ ...m, [log.id!]: e.target.value }))}
-                        className="w-16 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-[11px] font-bold text-white focus:border-indigo-500 focus:outline-none"
-                      />
-                      <button
-                        onClick={() => setAllowedMin(log)}
-                        disabled={busy === log.id}
-                        className="ml-auto rounded-lg bg-indigo-600 px-3.5 py-1.5 text-[11px] font-black text-white shadow-lg shadow-indigo-600/25 hover:bg-indigo-500 disabled:opacity-50 transition"
-                      >
-                        {busy === log.id ? '...' : 'Timer Set'}
-                      </button>
-                    </div>
-                    <p className="mt-1.5 text-[10px] text-slate-500">
-                      Time se pehle wapas aaya = points UP • late / bina bataye = points DOWN (auto)
-                    </p>
-                  </div>
-                )}
-
-                {typeof log.lat === 'number' && typeof log.lng === 'number' && (
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                    <MapPinOff className="h-3 w-3" />
-                    GPS: {log.lat.toFixed(4)}, {log.lng.toFixed(4)}
-                  </div>
-                )}
+            {/* Body — frozen/over time + summary */}
+            <div className="space-y-1.5 px-3.5 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Time OVER — allowed {p.allowedMin} min
+                </span>
+                <span className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 font-mono text-[13px] font-black tabular-nums text-rose-300">
+                  {fmtElapsed(p.worstElapsedMs)}
+                </span>
               </div>
-            );
-          })}
-        </div>
+              <p className="text-[11px] font-semibold leading-snug text-rose-300/90">
+                {totalMin} min se shop ke bahar ({overByMin} min zyada)
+                {p.anyPaused ? ' • tour pause: time freeze' : ''}
+              </p>
+              {typeof p.latest.lat === 'number' && typeof p.latest.lng === 'number' && (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                  <MapPinOff className="h-3 w-3" />
+                  GPS: {p.latest.lat.toFixed(4)}, {p.latest.lng.toFixed(4)}
+                </div>
+              )}
+            </div>
 
-        <div className="border-t border-slate-800 bg-slate-900/95 px-5 py-3 text-[10.5px] font-semibold text-slate-500">
-          Record close ho jayega jab staff shop wapas aayega (GPS auto-detect) — Outside Alerts tab me pura history.
-        </div>
-      </div>
+            <div className="border-t border-slate-800/80 bg-slate-950/60 px-3.5 py-1.5 text-[9.5px] font-semibold text-slate-500">
+              Outside Alerts tab me details • wapas aate hi auto-close
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -11,14 +11,12 @@ import {
   X,
   Calendar,
   Calculator,
-  CheckCircle2,
-  AlertTriangle,
-  CloudOff
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import {
   SheetData,
   MonthDoc,
-  ComputedChips,
   cellToA1,
   colToLetter,
   isComputedCell,
@@ -317,24 +315,10 @@ export default function HisabXLScreen() {
     return sheetsCache[`${selectedMonthId}::${activeSheetName}`] || null;
   }, [sheetsCache, selectedMonthId, activeSheetName]);
 
-  // Compute live formula chips for current sheet
-  const { liveGrid, liveChips } = useMemo<{ liveGrid: CellValue[][]; liveChips: ComputedChips }>(() => {
-    if (!currentSheet || !currentSheet.grid || currentSheet.grid.length === 0) {
-      return {
-        liveGrid: [],
-        liveChips: { cash1no: 0, recipt1no: 0, csah2no: 0, recipt2no: 0 }
-      };
-    }
-    const isNumericSheet = isDaySheetName(activeSheetName);
-    if (isNumericSheet) {
-      const res = runFormulaEngine(currentSheet.grid);
-      return { liveGrid: res.grid, liveChips: res.chips };
-    } else {
-      return {
-        liveGrid: currentSheet.grid,
-        liveChips: { cash1no: 0, recipt1no: 0, csah2no: 0, recipt2no: 0 }
-      };
-    }
+  // Active sheet grid (day sheets = formula-engine processed)
+  const liveGrid = useMemo<CellValue[][]>(() => {
+    if (!currentSheet || !currentSheet.grid || currentSheet.grid.length === 0) return [];
+    return isDaySheetName(activeSheetName) ? runFormulaEngine(currentSheet.grid).grid : currentSheet.grid;
   }, [currentSheet, activeSheetName]);
 
   // Merge map for current sheet
@@ -486,6 +470,22 @@ export default function HisabXLScreen() {
     }
   };
 
+  // ===== Website-style navigation buttons (Boss: 'button add karo website jaisa banao') =====
+  const dayNav = (dir: -1 | 1) => {
+    if (sortedSheetNames.length === 0) return;
+    const idx = sortedSheetNames.indexOf(activeSheetName);
+    if (idx < 0) return;
+    const next = sortedSheetNames[Math.min(sortedSheetNames.length - 1, Math.max(0, idx + dir))];
+    if (next && next !== activeSheetName) setActiveSheetName(next);
+  };
+  const jumpToday = () => {
+    if (selectedMonthId !== realMonthId()) {
+      setSelectedMonthId(realMonthId());
+      setSheetsCache({});
+    }
+    setActiveSheetName(todayDayStr());
+  };
+
   // Visible columns are 0 to 28 (A to AC). AD..AK (29..36) are hidden helper columns in table.
   const visibleColCount = 29;
   const isDaySheet = isDaySheetName(activeSheetName);
@@ -521,113 +521,107 @@ export default function HisabXLScreen() {
         </div>
       )}
 
-      {/* Top Bar (premium navy ribbon): Month Selector + TODAY + Download */}
-      <div className="sticky top-0 z-40 border-b border-slate-700/60 bg-gradient-to-r from-slate-950 via-[#0d1b3a] to-slate-950 shadow-xl shadow-black/30 backdrop-blur">
+      {/* ===== PREMIUM PRODUCT HEADER (company website style — Boss: 'professional company style') ===== */}
+      <div className="border-b border-slate-800/70 bg-gradient-to-r from-slate-950 via-[#0d1b3a] to-slate-950">
         <div className="h-[2px] w-full bg-gradient-to-r from-emerald-400/70 via-indigo-400/70 to-emerald-400/70" />
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-700 shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-300/40">
-              <FileSpreadsheet className="h-5 w-5 text-white" />
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-700 shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-300/40">
+              <FileSpreadsheet className="h-6 w-6 text-white" />
             </div>
             <div className="leading-tight">
-              <h2 className="shivam-silver shivam-silver-shine-slow text-base font-black tracking-wide">HISAB XL</h2>
-              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-300/90">Daily Excel Accounts — Chart /10</p>
+              <h1 className="shivam-silver shivam-silver-shine-slow text-2xl font-black tracking-[0.06em]">HISAB XL</h1>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-300/80">Daily Excel Accounts — Chart /10</p>
             </div>
           </div>
 
-          {/* Month Selector Dropdown */}
-          <div className="relative">
-            <select
-              value={selectedMonthId}
-              onChange={(e) => {
-                setSelectedMonthId(e.target.value);
-                setSheetsCache({});
-              }}
-              disabled={loadingMonths || months.length === 0}
-              className="rounded-lg border border-slate-600/70 bg-slate-950/90 px-3 py-1.5 text-xs font-bold text-slate-100 ring-1 ring-white/5 transition hover:border-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:opacity-50"
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black tracking-wider text-emerald-300">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+              </span>
+              LIVE SYNC
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/40 bg-gradient-to-r from-indigo-500/20 via-violet-500/15 to-indigo-500/20 px-3 py-1.5 text-[10px] font-black tracking-wider text-indigo-200 ring-1 ring-inset ring-indigo-300/20">
+              <Calendar className="h-3 w-3" />
+              TODAY • {todayLabel}
+            </span>
+            <button
+              onClick={handleDownloadWorkbook}
+              disabled={!currentMonth || !selectedMonthId}
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 ring-1 ring-emerald-300/40 transition-all hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-xl hover:shadow-emerald-500/40 disabled:translate-y-0 disabled:opacity-40"
             >
-              {months.length === 0 ? (
-                <option value="">(No months yet)</option>
-              ) : (
-                months.map((m) => (
-                  <option key={m.monthId} value={m.monthId}>
-                    {m.label} ({m.sheetNames?.length || 0} sheets){m.synthetic ? ' • auto' : ''}
-                  </option>
-                ))
-              )}
-            </select>
+              <Download className="h-3.5 w-3.5" />
+              <span>XL Download</span>
+            </button>
           </div>
+        </div>
+      </div>
 
-          {/* TODAY chip */}
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/40 bg-gradient-to-r from-indigo-500/20 via-violet-500/15 to-indigo-500/20 px-2.5 py-1 text-[10px] font-black tracking-wider text-indigo-200 ring-1 ring-inset ring-indigo-300/20">
-            <Calendar className="h-3 w-3" />
-            TODAY • {todayLabel}
-          </span>
+      {/* ===== CONTROL TOOLBAR (sticky website-style button bar) ===== */}
+      <div className="sticky top-0 z-40 border-b border-slate-700/60 bg-slate-950/90 shadow-lg shadow-black/20 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
+          {/* Month Selector Dropdown */}
+          <select
+            value={selectedMonthId}
+            onChange={(e) => {
+              setSelectedMonthId(e.target.value);
+              setSheetsCache({});
+            }}
+            disabled={loadingMonths || months.length === 0}
+            className="rounded-lg border border-slate-600/70 bg-slate-950/90 px-3 py-1.5 text-xs font-bold text-slate-100 ring-1 ring-white/5 transition hover:border-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:opacity-50"
+          >
+            {months.length === 0 ? (
+              <option value="">(No months yet)</option>
+            ) : (
+              months.map((m) => (
+                <option key={m.monthId} value={m.monthId}>
+                  {m.label} ({m.sheetNames?.length || 0} sheets){m.synthetic ? ' • auto' : ''}
+                </option>
+              ))
+            )}
+          </select>
 
+          <span className="mx-1 hidden h-5 w-px bg-slate-700/70 sm:block" />
+
+          {/* Day navigation buttons — pichli / agli sheet */}
+          <button
+            onClick={() => dayNav(-1)}
+            title="Pichli sheet"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-40"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => dayNav(1)}
+            title="Agli sheet"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-40"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <button
+            onClick={jumpToday}
+            title="Aaj ki sheet par jump karo (fresh 0)"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3 text-[11px] font-black tracking-wide text-white shadow-lg shadow-indigo-600/25 ring-1 ring-indigo-300/30 transition-all hover:-translate-y-px hover:shadow-xl disabled:opacity-40"
+          >
+            <Calendar className="h-3.5 w-3.5" />
+            TODAY
+          </button>
           <button
             onClick={() => fetchMonths(false, selectedMonthId)}
             title="Refresh Months"
             disabled={loadingMonths}
-            className="rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 p-1.5 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-50"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:from-slate-700 hover:text-white hover:shadow-lg hover:shadow-black/30 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-indigo-400' : ''}`} />
           </button>
-        </div>
-
-        {/* Action Buttons — sirf DOWNLOAD (Boss order: upload option nahi) */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleDownloadWorkbook}
-            disabled={!currentMonth || !selectedMonthId}
-            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 ring-1 ring-emerald-300/40 transition-all hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-xl hover:shadow-emerald-500/40 disabled:translate-y-0 disabled:opacity-40"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>XL Download</span>
-          </button>
-        </div>
         </div>
       </div>
 
       {/* Offline-first banner (OFFLINE / SYNC PENDING) */}
       <div className="px-4 pt-3">
         <OutboxBanner />
-      </div>
-
-      {/* Live Formula Total Strip (navy cards) */}
-      <div className="grid grid-cols-2 gap-2 px-4 pt-3 lg:grid-cols-4">
-        {([
-          { label: 'CASH 1NO', key: 'cash1no' as const, dot: 'bg-emerald-400', val: 'text-emerald-300', formula: 'AH53 = SUM(AH2:AH50)' },
-          { label: 'RECEIPT 1NO', key: 'recipt1no' as const, dot: 'bg-sky-400', val: 'text-sky-300', formula: 'AI53 = SUM(AI2:AI50)' },
-          { label: 'CASH 2NO', key: 'csah2no' as const, dot: 'bg-amber-400', val: 'text-amber-300', formula: 'AJ53 = SUM(AJ2:AJ50)' },
-          { label: 'RECEIPT 2NO', key: 'recipt2no' as const, dot: 'bg-purple-400', val: 'text-purple-300', formula: 'AK53 = SUM(AK2:AK50)' }
-        ]).map((chip) => (
-          <div key={chip.key} className="flex items-center justify-between gap-2 rounded-xl border border-slate-700/60 bg-gradient-to-br from-slate-900 via-slate-900/70 to-slate-950 px-3.5 py-2.5 shadow-lg shadow-black/25 ring-1 ring-white/5 transition-all hover:-translate-y-px hover:border-slate-500/70 hover:shadow-xl">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${chip.dot} shadow-[0_0_6px_rgba(255,255,255,0.25)]`} />
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{chip.label}</span>
-              </div>
-              <p className="mt-0.5 truncate text-[9px] font-medium text-slate-600">{chip.formula}</p>
-            </div>
-            <span className={`font-mono text-base font-black ${chip.val}`}>
-              ₹{liveChips[chip.key].toLocaleString('en-IN')}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Guide strip (Boss ke 3 rules — UI English) */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 pt-2.5 text-[10.5px] font-semibold text-slate-400">
-        <span>1 unit = ₹10 (200 = ₹2,000)</span>
-        <span className="text-slate-700">|</span>
-        <span>New day = fresh sheet, all counters start at 0</span>
-        <span className="text-slate-700">|</span>
-        <span>Click any cell to type — saves instantly, offline-safe</span>
-        <span className="text-slate-700">|</span>
-        <span className="inline-flex items-center gap-1 text-slate-500">
-          <CloudOff className="h-3 w-3" /> works without internet
-        </span>
       </div>
 
       {/* Day Tabs Bar (Excel sheet tabs — navy workbook look) */}
