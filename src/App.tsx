@@ -13,8 +13,7 @@ import {
   Activity,
   FileSpreadsheet,
   Settings,
-  Menu,
-  X,
+  ChevronsRight,
   LogOut,
   ShieldAlert,
   MapPinOff
@@ -71,7 +70,7 @@ export default function App() {
     setActiveTabState(tab);
     try { localStorage.setItem(TAB_PERSIST_KEY, tab); } catch { /* storage unavailable */ }
   };
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [outsideCount, setOutsideCount] = useState(0);
 
@@ -189,6 +188,10 @@ export default function App() {
 
   // Home = Hisab XL (Boss order: logo click har screen se home par le jaye)
   const goHome = () => setActiveTab('hisabxl');
+
+  // Sidebar auto-hide rule (Boss order 2026-10-26): main screen (Hisab XL) par
+  // rail hamesha visible — doosri screens par hide, edge button se wapas bahar
+  const isHome = activeTab === 'hisabxl';
 
   const handleLogout = async () => {
     try {
@@ -451,42 +454,44 @@ export default function App() {
           har tab par modal — kon gaya + stopwatch set. Sirf manager session. */}
       <OutsideAlertPopup />
 
-      {/* Mobile Sidebar Overlay */}
-      {mobileMenuOpen && (
+      {/* Drawer Backdrop — sirf non-home screens par menu khule tab (outside tap = close) */}
+      {!isHome && drawerOpen && (
         <div
-          onClick={() => setMobileMenuOpen(false)}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setDrawerOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
         ></div>
       )}
 
-      {/* Sidebar Panel */}
+      {/* Slim Icon Rail Sidebar (Boss redesign 2026-10-26):
+          - Sare naam hata — sirf SHIVAM logo + niche chote font me naam
+          - Sare nav buttons icon-only, top se bottom poora rail bharke (koi scroll/cut nahi)
+          - Main screen (Hisab XL) par rail visible; doosri screens par auto-hide
+          - Left-edge floating button (Android popup style) se kisi bhi screen par wapas bahar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-slate-800 bg-slate-900/95 backdrop-blur transition-transform duration-300 lg:static lg:translate-x-0 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        className={` ${
+          isHome ? 'static' : 'fixed inset-y-0 left-0 z-50'
+        } w-20 shrink-0 flex flex-col border-r border-slate-800 bg-slate-900/95 backdrop-blur transition-transform duration-300 ${
+          isHome ? 'translate-x-0' : drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Brand Header — click = Home (Boss order) */}
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        {/* Brand — sirf logo, niche chote font me naam (Boss order) */}
+        <div className="flex justify-center border-b border-slate-800 px-2 pt-4 pb-3">
           <button
-            onClick={() => { goHome(); setMobileMenuOpen(false); }}
+            onClick={() => { goHome(); setDrawerOpen(false); }}
             title="Go to Home"
-            className="flex flex-col items-start rounded-lg hover:opacity-80 transition"
+            className="flex flex-col items-center gap-1.5 hover:opacity-80 transition"
           >
-            <span className="shivam-silver shivam-silver-shine text-lg tracking-[0.28em] font-bold leading-none">
-              S H I V A M
+            <span className="shivam-silver shivam-silver-shine text-[11px] font-bold tracking-[0.2em] leading-none">
+              SHIVAM
             </span>
-            <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-indigo-400 mt-1">Manager Dashboard</p>
-          </button>
-          <button
-            onClick={() => setMobileMenuOpen(false)}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 lg:hidden"
-          >
-            <X className="h-5 w-5" />
+            <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-indigo-400">
+              Manager
+            </span>
           </button>
         </div>
 
-        {/* Navigation Item List — bade colored icon tiles (Boss order) */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
+        {/* Navigation — icon-only colored tiles, upar se niche last tak */}
+        <div className="flex-1 flex flex-col items-center justify-evenly py-3">
           {navItems.map((item) => {
             const isSelected = activeTab === item.id;
             const tile = TILE_STYLES[item.color];
@@ -495,30 +500,22 @@ export default function App() {
                 key={item.id}
                 onClick={() => {
                   setActiveTab(item.id);
-                  setMobileMenuOpen(false);
+                  setDrawerOpen(false);
                 }}
-                className={`w-full flex items-center gap-3 rounded-2xl p-2.5 text-left transition ${
-                  isSelected
-                    ? 'bg-indigo-600 shadow-lg shadow-indigo-600/25'
-                    : 'hover:bg-slate-800/80'
-                }`}
+                title={item.title}
+                className="relative"
               >
                 <span
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                    isSelected ? 'border-white/30 bg-white/15 text-white' : tile
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl border transition ${
+                    isSelected
+                      ? 'border-white/30 bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                      : tile
                   }`}
                 >
                   {item.icon}
                 </span>
-                <span
-                  className={`flex-1 text-xs font-bold leading-snug ${
-                    isSelected ? 'text-white' : 'text-slate-300'
-                  }`}
-                >
-                  {item.title}
-                </span>
                 {item.badge && (
-                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-slate-950">
+                  <span className="absolute -top-1.5 -right-1.5 rounded-full bg-amber-500 px-1.5 py-px text-[9px] font-black text-slate-950">
                     {item.badge}
                   </span>
                 )}
@@ -527,37 +524,35 @@ export default function App() {
           })}
         </div>
 
-        {/* Sidebar Footer User Profile */}
-        <div className="border-t border-slate-800 p-4 bg-slate-900">
-          <div className="flex items-center justify-between">
-            <div className="truncate">
-              <p className="text-xs font-bold text-white truncate">{userProfile?.name || currentUser.email}</p>
-              <p className="text-[10px] font-bold text-purple-400">
-                MANAGER VERIFIED
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              title="Logout"
-              className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 hover:text-white transition"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
+        {/* Footer — sirf logout icon (naam/email hatay, minimal) */}
+        <div className="flex justify-center border-t border-slate-800 px-2 py-3">
+          <button
+            onClick={handleLogout}
+            title="Logout"
+            className="rounded-xl border border-slate-700 bg-slate-800 p-2.5 text-slate-300 hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-400 transition"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </aside>
+
+      {/* Floating Edge Button — Android popup style shortcut (Boss order):
+          kisi bhi non-home screen par left edge se menu wapas bahar lane ke liye */}
+      {!isHome && !drawerOpen && (
+        <button
+          onClick={() => setDrawerOpen(true)}
+          title="Open Menu"
+          className="fixed left-0 top-1/2 z-40 -translate-y-1/2 flex flex-col items-center rounded-r-xl border border-l-0 border-slate-600 bg-slate-800/95 py-4 px-1 text-slate-300 shadow-lg shadow-black/40 hover:bg-slate-700 hover:text-white transition animate-pulse"
+        >
+          <ChevronsRight className="h-4 w-4" />
+        </button>
+      )}
 
       {/* Main Content Wrapper */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-6 py-3.5 backdrop-blur">
           <div className="flex items-center gap-2.5 sm:gap-4">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 lg:hidden"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
             {/* SHIVAM logo on EVERY screen — click = Home (Boss order) */}
             <button
               onClick={goHome}
