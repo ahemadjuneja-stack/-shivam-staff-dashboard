@@ -19,7 +19,7 @@ export const ROLES: RoleDefinition[] = [
     permissions: [
       'Full Admin Dashboard access',
       'Staff management & verifications',
-      'Hisab XL & sheets control',
+      'Cash Counter & sheets control',
       'All live attendance & settings'
     ]
   },

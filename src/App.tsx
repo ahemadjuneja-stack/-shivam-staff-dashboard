@@ -405,7 +405,7 @@ export default function App() {
   const navItems = [
     {
       id: 'hisabxl' as NavTab,
-      title: 'Hisab XL',
+      title: 'Cash Counter',
       icon: <Table className="h-6 w-6" />,
       color: 'emerald' as const
     },
@@ -443,7 +443,7 @@ export default function App() {
     },
     {
       id: 'hisab' as NavTab,
-      title: 'Hisab XL',
+      title: 'Cash Counter',
       icon: <FileSpreadsheet className="h-6 w-6" />,
       color: 'teal' as const
     },

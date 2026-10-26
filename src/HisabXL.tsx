@@ -18,7 +18,6 @@ import {
   SheetData,
   MonthDoc,
   cellToA1,
-  colToLetter,
   isComputedCell,
   isNumericValue,
   runFormulaEngine,
@@ -71,6 +70,68 @@ const realMonthLabel = () => {
   return `${MONTH_NAMES[n.getMonth()]}-${n.getFullYear()}`;
 };
 const todayDayStr = () => String(new Date().getDate());
+
+// Boss order 2026-10-27: parcel side ki HG line (column W) REMOVE — render-hide.
+// Grid data me col 22 INTACT rehta hai (formulas / XL export / saves untouched).
+const HG_COL = 22;
+
+// ============================================================
+// PREMIUM DARK GRID THEME — VIEW-ONLY color transform (Boss: 'colors
+// change karo premium, dashboard themes se match, code/line wahi rahe').
+// Canonical chart ke apne colors hue-preserving dark navy-emerald palette
+// me map hote hai — har section ki pehchan bani rehti hai. Grid data /
+// formulas / merges / XL export 100% untouched.
+// ============================================================
+const GRID_BG_DEFAULT = '#0e1830';
+const GRID_BORDER = '#223055';
+
+const hexToHsl = (hex: string): [number, number, number] => {
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h * 60, s, l];
+};
+
+// Light/gray backgrounds -> navy tiers; colored fills -> same-hue dark premium tint
+const premiumCellBg = (cssColor: string | null): string => {
+  if (!cssColor) return GRID_BG_DEFAULT;
+  const hex = cssColor.replace('#', '').slice(-6).toUpperCase();
+  const [h, s, l] = hexToHsl(hex);
+  if (s < 0.08) {
+    if (l > 0.85) return '#0e1830'; // white sheet -> base navy
+    if (l > 0.6) return '#121d3c';  // light gray band -> alt navy
+    if (l > 0.3) return '#16234a';
+    return '#1a2a55';
+  }
+  const S = Math.min(0.5, Math.max(0.26, s * 0.55));
+  const L = l > 0.6 ? 0.19 : 0.16;
+  return `hsl(${Math.round(h)} ${Math.round(S * 100)}% ${Math.round(L * 100)}%)`;
+};
+
+// Dark fonts -> light (same hue); light fonts -> brightened readable
+const premiumFontColor = (cssColor: string | null): string => {
+  if (!cssColor) return '#dbe4f3';
+  const hex = cssColor.replace('#', '').slice(-6).toUpperCase();
+  const [h, s, l] = hexToHsl(hex);
+  if (s < 0.08) {
+    if (l < 0.45) return '#dbe4f3';
+    return l > 0.85 ? '#f3f6fc' : '#c9d4e8';
+  }
+  if (l < 0.45) {
+    return `hsl(${Math.round(h)} ${Math.round(Math.min(0.6, Math.max(0.2, s * 0.7)) * 100)}% 78%)`;
+  }
+  return `hsl(${Math.round(h)} ${Math.round(Math.min(0.55, s) * 100)}% ${l > 0.8 ? 82 : Math.max(72, Math.round(l * 100) - 6)}%)`;
+};
 
 export default function HisabXLScreen() {
   // Month list and active selection
@@ -530,7 +591,7 @@ export default function HisabXLScreen() {
               <FileSpreadsheet className="h-6 w-6 text-white" />
             </div>
             <div className="leading-tight">
-              <h1 className="shivam-silver shivam-silver-shine-slow text-2xl font-black tracking-[0.06em]">HISAB XL</h1>
+              <h1 className="shivam-silver shivam-silver-shine-slow text-2xl font-black tracking-[0.06em]">CASH COUNTER</h1>
               <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-300/80">Daily Excel Accounts — Chart /10</p>
             </div>
           </div>
@@ -685,18 +746,19 @@ export default function HisabXLScreen() {
         </div>
       ) : (
         <div className="px-4 pb-8 pt-3">
-          {/* Excel grid card — white sheet exactly like the file (bilkul XL), navy chrome ke andar */}
-          <div className="overflow-hidden rounded-b-xl rounded-tr-xl border border-slate-700/70 bg-white shadow-2xl shadow-black/40">
-            <div className="xl-scroll overflow-auto bg-white" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+          {/* Premium dark grid card — dashboard navy theme match (data/formulas untouched) */}
+          <div className="overflow-hidden rounded-b-xl rounded-tr-xl border border-[#1e2c52] bg-gradient-to-b from-[#0b1426] to-[#0a1122] shadow-2xl shadow-black/60 ring-1 ring-emerald-400/10">
+            <div className="xl-scroll overflow-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
               <table
-                className="w-max select-text border-collapse bg-white"
+                className="w-max select-text border-collapse"
                 style={{ minWidth: '100%', fontFamily: "'Comfortaa', 'Segoe UI', sans-serif" }}
               >
-                {/* Sticky Column Headers: Row 0 / Column Letters */}
-                <thead className="sticky top-0 z-20 bg-gray-100 shadow-sm">
+                {/* Invisible width-holder strip — Boss order: side ke 1-2-3-4 row numbers
+                    + upar A-B-C-D column letters REMOVE (sirf column width hints bache) */}
+                <thead>
                   <tr>
-                    <th className="sticky left-0 z-30 w-12 shrink-0 border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-bold text-gray-700"></th>
                     {Array.from({ length: visibleColCount }).map((_, c) => {
+                      if (c === HG_COL) return null;
                       const wch = currentSheet?.cols?.[c];
                       const widthPx = isDaySheet
                         ? (CANON_COL_WIDTHS_PX[c] ?? 93)
@@ -706,11 +768,8 @@ export default function HisabXLScreen() {
                       return (
                         <th
                           key={c}
-                          style={{ width: `${widthPx}px`, minWidth: `${widthPx}px` }}
-                          className="border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-bold text-gray-700"
-                        >
-                          {colToLetter(c)}
-                        </th>
+                          style={{ width: `${widthPx}px`, minWidth: `${widthPx}px`, height: 0, padding: 0, border: 'none', backgroundColor: 'transparent' }}
+                        />
                       );
                     })}
                   </tr>
@@ -719,12 +778,10 @@ export default function HisabXLScreen() {
                 {/* Table Body */}
                 <tbody>
                   {liveGrid.map((row, r) => (
-                    <tr key={r} className="hover:opacity-95 transition-opacity" style={{ height: r === 0 ? 47 : 26 }}>
-                      <td className="sticky left-0 z-10 shrink-0 border border-gray-300 bg-gray-100 px-1 py-0.5 text-center font-mono text-[10px] font-semibold text-gray-600">
-                        {r + 1}
-                      </td>
-
+                    <tr key={r} style={{ height: r === 0 ? 47 : 26 }}>
                       {row.slice(0, visibleColCount).map((val, c) => {
+                        if (c === HG_COL) return null; // Boss: HG line remove
+
                         const mergeKey = `${r},${c}`;
                         const mergeInfo = mergeMap.get(mergeKey);
 
@@ -745,18 +802,19 @@ export default function HisabXLScreen() {
                             : null;
                         }
 
-                        const bgColor = colorToCss(styleObj?.fill?.fgColor) ?? '#ffffff';
-                        const fontColor = colorToCss(styleObj?.font?.color) ?? '#000000';
+                        const bgColor = premiumCellBg(colorToCss(styleObj?.fill?.fgColor));
+                        const fontColor = premiumFontColor(colorToCss(styleObj?.font?.color));
                         const fontWeight = styleObj?.font?.bold ? 'bold' : 'normal';
                         const fontStyle = styleObj?.font?.italic ? 'italic' : 'normal';
                         const fontSize = styleObj?.font?.sz ? `${Math.round(styleObj.font.sz * 1.33)}px` : '13px';
                         const textAlign = styleObj?.alignment?.horizontal ?? (isNumericValue(val) ? 'right' : 'left');
                         const whiteSpace = styleObj?.alignment?.wrapText ? 'normal' : 'nowrap';
 
-                        const borderTop = styleObj?.border?.top ? `1px solid ${colorToCss(styleObj.border.top.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
-                        const borderBottom = styleObj?.border?.bottom ? `1px solid ${colorToCss(styleObj.border.bottom.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
-                        const borderLeft = styleObj?.border?.left ? `1px solid ${colorToCss(styleObj.border.left.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
-                        const borderRight = styleObj?.border?.right ? `1px solid ${colorToCss(styleObj.border.right.color) ?? '#d4d4d8'}` : '1px solid #d4d4d8';
+                        // Premium hairline grid lines — position same, sirf color (Boss rule)
+                        const borderTop = `1px solid ${GRID_BORDER}`;
+                        const borderBottom = `1px solid ${GRID_BORDER}`;
+                        const borderLeft = `1px solid ${GRID_BORDER}`;
+                        const borderRight = `1px solid ${GRID_BORDER}`;
 
                         let displayVal: string | number | null = val;
                         if (val === null || val === undefined) {
@@ -785,7 +843,7 @@ export default function HisabXLScreen() {
                             colSpan={effectiveColSpan && effectiveColSpan > 1 ? effectiveColSpan : undefined}
                             onClick={() => handleCellClick(r, c)}
                             title={`${cellToA1(r, c)}: ${val ?? ''}${computed ? ' (Auto-computed)' : ' (Click to edit)'}`}
-                            className="cursor-pointer select-text overflow-hidden px-1 py-[1px] align-middle hover:opacity-90"
+                            className="cursor-pointer select-text overflow-hidden px-1 py-[1px] align-middle transition-[filter] duration-100 hover:brightness-[1.45]"
                             style={{
                               backgroundColor: bgColor,
                               color: fontColor,
@@ -815,7 +873,7 @@ export default function HisabXLScreen() {
                                 >
                                   <option value="">(Blank)</option>
                                   {(editingCell.col === 5 ? ['Cash', 'Receipt'] : editingCell.col === 16 ? ['Transport', 'Courior', 'In Hand', 'Other Party', 'Riksha'] : ['1', '2']).map((opt) => (
-                                    <option key={opt} value={opt}>{opt}</option>
+                                    <option key={opt} value={opt} className="bg-[#0e1830] text-slate-100">{opt}</option>
                                   ))}
                                 </select>
                               ) : (
