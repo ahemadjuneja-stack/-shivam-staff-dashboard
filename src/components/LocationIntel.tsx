@@ -201,8 +201,12 @@ export default function LocationIntel({ uid, name, isSales }: LocationIntelProps
     };
   }, [sel?.id, pts.length]);
 
-  const lastLoc = device?.lastLocation;
+  const lastLoc = device?.lastLocation as
+    | { lat: number; lng: number; at: number; accuracy?: number; src?: string }
+    | undefined;
   const liveSession = sessions.find((s) => s.status === 'open');
+  // src:'svc' = NATIVE background service ne likha (app band tha tab bhi —
+  // Boss order: app open na kare tab bhi location dashboard par aaye)
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
@@ -249,6 +253,12 @@ export default function LocationIntel({ uid, name, isSales }: LocationIntelProps
               <p className="font-semibold text-slate-100 mt-0.5">
                 {lastLoc.lat.toFixed(5)}, {lastLoc.lng.toFixed(5)}
                 <span className="text-slate-500 font-normal"> ({agoStr(lastLoc.at)})</span>
+                {lastLoc.src === 'svc' && (
+                  <span className="ml-1.5 inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[8.5px] font-extrabold bg-sky-500/10 text-sky-400 border border-sky-500/25 align-middle">
+                    <span className="h-1 w-1 rounded-full bg-sky-400 animate-pulse" />
+                    BACKGROUND LIVE
+                  </span>
+                )}
                 {mapsLink(lastLoc.lat, lastLoc.lng) && (
                   <a href={mapsLink(lastLoc.lat, lastLoc.lng)!} target="_blank" rel="noreferrer" className="ml-2 text-sky-400 underline">Open in Maps</a>
                 )}
