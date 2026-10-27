@@ -1,14 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, query, where } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 import {
   ClipboardPaste, MapPin, Truck, Trash2, Save, X, RefreshCw,
-  CheckCircle2, AlertTriangle, Radio, User, Wallet, Landmark
+  CheckCircle2, AlertTriangle, Radio, User, Wallet, Landmark,
+  UploadCloud, FileText, FileSpreadsheet, Loader2
 } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { obSet, OutboxBanner } from '../lib/outbox';
 import { Tour, TourCity, TourHisabDoc, TourHisabEntry } from '../types';
 import { fmtRs, todayStr } from '../lib/cbMoney';
 import { parseTourPaste, suggestTourName } from '../lib/tourPaste';
+import { fileKindOf, parseTourWorkbook, pdfToText } from '../lib/tourFile';
 
 // ============================================================
 // TOUR PASTE + SALESMAN LIVE (Task 93, Boss order 2026-10-28)
@@ -60,6 +63,10 @@ export default function TourPasteSection() {
   const [hisabMap, setHisabMap] = useState<Record<string, TourHisabDoc>>({});
   const [salesUsers, setSalesUsers] = useState<{ uid: string; name: string }[]>([]);
   const [openUid, setOpenUid] = useState('');
+  // FILE UPLOAD (Task 95 — Boss: "pdf ya xl hi upload karege, app khud manage kare")
+  const [fileInfo, setFileInfo] = useState('');
+  const [fileBusy, setFileBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const say = (t: 'ok' | 'err', m: string) => { setMsg({ t, m }); setTimeout(() => setMsg((p) => (p?.m === m ? null : p)), 6000); };
 
@@ -120,6 +127,55 @@ export default function TourPasteSection() {
     } else {
       say('err', res.reason || 'Parse fail');
     }
+  };
+
+  // ===== FILE UPLOAD (Task 95): file chuno, app KHUD parse kare =====
+  const applyParsed = (res: ReturnType<typeof parseTourPaste>, srcText: string, label: string) => {
+    setParsed(res);
+    setPaste(srcText.slice(0, 20000)); // sourceText backup flow reuse
+    if (res.ok) {
+      setTourName((prev) => (prev.trim() ? prev : suggestTourName(res)));
+      const shops = res.cities.reduce((a, c) => a + c.shops.length, 0);
+      const bills = res.cities.reduce((a, c) => a + c.shops.reduce((x, s) => x + s.bills.length, 0), 0);
+      say('ok', `${label} parsed: ${res.cities.length} cities · ${shops} shops · ${bills} bills${res.tourDate ? ` · date ${res.tourDate}` : ''} — niche preview check karke SAVE karo`);
+    } else {
+      say('err', res.reason || 'File parse nahi hui');
+    }
+  };
+
+  const handleFile = async (f: File) => {
+    const kind = fileKindOf(f.name);
+    if (kind === 'unknown') {
+      return say('err', 'Sirf PDF ya Excel/CSV file chalo (.pdf / .xlsx / .xls / .csv)');
+    }
+    setFileBusy(true);
+    setFileInfo(f.name);
+    try {
+      const buf = await f.arrayBuffer();
+      if (kind === 'pdf') {
+        const text = await pdfToText(buf);
+        if (!text.trim()) {
+          say('err', 'Is PDF me text nahi mila (scanned photo hai?) — Miracle se text-based PDF export karo');
+          setParsed(null);
+        } else {
+          applyParsed(parseTourPaste(text), text, 'PDF');
+        }
+      } else {
+        const res = parseTourWorkbook(buf, XLSX as unknown as Parameters<typeof parseTourWorkbook>[1]);
+        applyParsed(res, res.text || '', `XL${res.sheetName ? ` (sheet: ${res.sheetName})` : ''}`);
+      }
+    } catch (e) {
+      say('err', 'File read/parse fail: ' + (e as Error).message.slice(0, 120));
+      setParsed(null);
+    } finally {
+      setFileBusy(false);
+    }
+  };
+
+  const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // same file dobara choose kar sake
+    if (f) void handleFile(f);
   };
 
   const saveTour = async () => {
@@ -194,9 +250,40 @@ export default function TourPasteSection() {
         <div className={`rounded-xl border p-3 text-xs font-semibold ${msg.t === 'ok' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/30 bg-rose-500/10 text-rose-300'}`}>{msg.m}</div>
       )}
 
-      {/* ============ PASTE CARD ============ */}
+      {/* ============ FILE UPLOAD CARD (Task 95 — app khud manage kare) ============ */}
+      <div className="rounded-2xl border border-cyan-500/25 bg-gradient-to-br from-slate-900 to-slate-900/60 p-4">
+        <h3 className="mb-1 flex items-center gap-2 text-sm font-black text-white">
+          <UploadCloud className="h-4 w-4 text-cyan-400" /> PDF / EXCEL UPLOAD — APP KHUD PARSE KAREGA
+          <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black text-emerald-400">NO PASTE NEEDED</span>
+        </h3>
+        <p className="mb-3 text-xs text-slate-400">Miracle se TOUR REPORT ka <b className="text-slate-200">PDF ya XL</b> download karke yahan upload karo — cities, shops, bills, payment-details sab khud nikal jayega.</p>
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) void handleFile(f); }}
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-cyan-500/40 bg-cyan-500/5 p-4"
+        >
+          <input ref={fileInputRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden" onChange={onFilePick} />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={fileBusy}
+            className="flex items-center gap-2 rounded-xl bg-cyan-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-600/30 hover:bg-cyan-500 disabled:opacity-60"
+          >
+            {fileBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+            {fileBusy ? 'PARSING…' : 'FILE CHUNO (PDF / XL / CSV)'}
+          </button>
+          {fileInfo && !fileBusy && (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
+              {fileInfo.toLowerCase().endsWith('.pdf') ? <FileText className="h-3.5 w-3.5 text-rose-400" /> : <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />}
+              {fileInfo}
+            </span>
+          )}
+          <span className="text-[10px] text-slate-500">file kahin upload nahi hoti — phone/laptop par hi parse hoti hai (private)</span>
+        </div>
+      </div>
+
+      {/* ============ PASTE CARD (fallback) ============ */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-        <h3 className="mb-2 flex items-center gap-2 text-sm font-black text-white"><ClipboardPaste className="h-4 w-4 text-cyan-400" /> MIRACLE / PDF DATA PASTE</h3>
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-black text-white"><ClipboardPaste className="h-4 w-4 text-cyan-400" /> YA TEXT PASTE KARO (PURANA TARIKA)</h3>
         <textarea
           value={paste}
           onChange={(e) => setPaste(e.target.value)}

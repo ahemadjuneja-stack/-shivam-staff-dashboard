@@ -24,6 +24,12 @@ export interface OutboxEntry {
   merge: boolean;
   at: number;
   tries: number;
+  // SELF-HEAL (Task 95): permanently-fail entry quarantine — FIFO queue
+  // block na ho. dead=true entries flush ME KABHI replay nahi hoti, data
+  // localStorage me safe rehta hai (inspection/clear UI banner se).
+  dead?: boolean;
+  err?: string;   // short reason (banner me dikhta hai)
+  deadAt?: number;
 }
 
 // localStorage shim for node-test env
@@ -85,7 +91,30 @@ export function journalRemove(opId: string): OutboxEntry[] {
 }
 
 export function journalPending(): number {
-  return readJournal().length;
+  // dead (quarantined) entries pending NAHI gini jati — warna banner phir
+  // bhi har screen par dikhta (Task 95 root complaint)
+  return readJournal().filter((e) => !e.dead).length;
+}
+
+// ---------- SELF-HEAL (Task 95): quarantine helpers ----------
+
+export function journalMarkDead(opId: string, err: string): OutboxEntry[] {
+  const list = readJournal();
+  for (const e of list) {
+    if (e.opId === opId) { e.dead = true; e.err = err; e.deadAt = Date.now(); }
+  }
+  writeJournal(list);
+  return list;
+}
+
+export function journalDeadList(): OutboxEntry[] {
+  return readJournal().filter((e) => !!e.dead);
+}
+
+export function journalClearDead(): OutboxEntry[] {
+  const list = readJournal().filter((e) => !e.dead);
+  writeJournal(list);
+  return list;
 }
 
 // REFRESH-SAFETY (Boss order 2026-10-27: "kitna bhi refresh karo jo likh diya
@@ -93,6 +122,8 @@ export function journalPending(): number {
 // journal me UNSENT write pending hai ya nahi. Load path ise padhta hai —
 // pending ho to LOCAL state (mirror) authoritative hai, Firestore purana ho
 // sakta hai (write abhi flush nahi hua). obSetPath entries ka col = slash-path.
+// NOTE: dead entries bhi gini jati hai — data-safety view (sheet ka write
+// permanently fail hua to LOCAL mirror hi authoritative rahega hamesha).
 export function pendingOpsForDoc(col: string, docId: string): number {
   return readJournal().filter((e) => e.col === col && e.docId === docId && !!e.payload).length;
 }
