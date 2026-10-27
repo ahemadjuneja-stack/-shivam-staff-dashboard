@@ -225,6 +225,24 @@ export function isNumericValue(val: unknown): boolean {
   return false;
 }
 
+// PERCENT DISPLAY RULE (Boss order 27 Oct — 'abhi bhi 5 ka 500% less discount
+// kar raha hai'): Task 78 ne CALCULATION fix ki thi (I >= 1 -> I/100) par Less
+// box ka DISPLAY XLSX.SSF.format('0%', 5) se "500%" dikhta tha — SSF percent
+// ko hamesha fraction maanta hai (5 = 500%). Ye helper engine ke EXCEL-PERCENT
+// RULE ka exact display mirror hai:
+//   numFmt me '%' + |value| >= 1  ->  Boss percent-style entry (5 = 5%)
+//   warna                         ->  fraction (0.05 = 5%, purana chart/demo data)
+// Return: formatted string ya null (null = caller khud SSF/number fallback).
+export function formatPercentDisplay(numFmt: string | undefined | null, val: number): string | null {
+  if (!numFmt || typeof numFmt !== 'string' || !numFmt.includes('%')) return null;
+  if (!Number.isFinite(val)) return null;
+  if (Math.abs(val) >= 1) {
+    const shown = Number.isInteger(val) ? String(val) : String(Math.round(val * 100) / 100);
+    return `${shown}%`;
+  }
+  return null; // fraction path — SSF.format asani se '0%' handle karta hai
+}
+
 // Normalize any raw grid into at least 53 rows × 37 columns of CellValue
 export function normalizeGrid(rawGrid: unknown[][], minRows = 53, minCols = 37): CellValue[][] {
   const rowCount = Math.max(rawGrid.length, minRows);

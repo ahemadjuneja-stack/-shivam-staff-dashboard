@@ -16,7 +16,8 @@ import {
   ALL_SHEET_NAMES,
   DAY_SHEET_MERGES,
   DAY_SHEET_COLS_WCH,
-  CellValue
+  CellValue,
+  formatPercentDisplay
 } from '../src/hisabXL';
 import {
   mirrorGetSheet,
@@ -183,6 +184,23 @@ mirrorSetSheet('2026-10', '28', { grid: [[1]], merges: [], cols: [] }); // touch
 const remaining = mirrorListMonths();
 check(`prune -> max 3 months (got ${remaining.length})`, remaining.length <= 3, JSON.stringify(remaining));
 check('current month prune survive', remaining.includes('2026-10'));
+
+console.log('\n=== 9. PERCENT DISPLAY RULE (Boss 27 Oct: 5 ka 500% display bug) ===');
+// Boss case: engine I=5 (percent-style) — Less box ab "5%" dikhaye, "500%" NAHI
+check('display 5 -> "5%" (Boss bug)', formatPercentDisplay('0%', 5) === '5%');
+check('display 2.5 -> "2.5%"', formatPercentDisplay('0%', 2.5) === '2.5%');
+check('display -5 -> "-5%" (negative sym)', formatPercentDisplay('0%', -5) === '-5%');
+// fraction path — engine/demo convention (0.05 = 5%) SSF ko karne do (null)
+check('fraction 0.05 -> SSF path (null)', formatPercentDisplay('0%', 0.05) === null);
+check('zero 0 -> SSF path (null)', formatPercentDisplay('0%', 0) === null);
+check('P1 0.25 -> SSF path (null, 25%)', formatPercentDisplay('0%', 0.25) === null);
+// non-percent numFmt / junk — untouched
+check('numFmt "0" -> null (non-percent)', formatPercentDisplay('0', 5) === null);
+check('numFmt missing -> null', formatPercentDisplay(undefined, 5) === null);
+check('NaN -> null', formatPercentDisplay('0%', NaN) === null);
+// SSF cross-check: fraction 0.05 se kya dikhta hai
+check('SSF confirms 0.05 = "5%"', XLSX.SSF.format('0%', 0.05) === '5%');
+check('SSF bug repro: 5 = "500%" tha', XLSX.SSF.format('0%', 5) === '500%');
 
 console.log(`\n========== RESULT: ${pass} PASS, ${fail} FAIL ==========`);
 process.exit(fail === 0 ? 0 : 1);

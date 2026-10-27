@@ -33,7 +33,8 @@ import {
   buildDaySheetTemplate,
   buildReminderTemplate,
   templateToSheetData,
-  ALL_SHEET_NAMES
+  ALL_SHEET_NAMES,
+  formatPercentDisplay
 } from './hisabXL';
 import { obSetPath, OutboxBanner } from './lib/outbox';
 import { mirrorGetSheet, mirrorSetSheet, mirrorGetMonthDoc, mirrorSetMonthDoc } from './lib/hisabMirror';
@@ -957,10 +958,21 @@ export default function HisabXLScreen() {
                           displayVal = '';
                         } else if (typeof val === 'number') {
                           if (styleObj?.numFmt && typeof styleObj.numFmt === 'string') {
-                            try {
-                              displayVal = XLSX.SSF.format(styleObj.numFmt, val);
-                            } catch {
-                              displayVal = Number.isInteger(val) ? val.toLocaleString('en-IN') : val.toFixed(2);
+                            // PERCENT DISPLAY FIX (Boss 27 Oct: 'abhi bhi 5 ka 500% less
+                            // discount kar raha hai'): SSF.format('0%', 5) = "500%" — SSF
+                            // percent ko hamesha fraction maanta hai. Engine rule (Task 78)
+                            // ka display mirror: |val| >= 1 = Boss percent-style (5 = 5%),
+                            // fraction (0.05) = SSF se hi "5%". Sirf display — data/raw
+                            // value/XL-export/Firestore UNTOUCHED.
+                            const pct = formatPercentDisplay(styleObj.numFmt, val);
+                            if (pct !== null) {
+                              displayVal = pct;
+                            } else {
+                              try {
+                                displayVal = XLSX.SSF.format(styleObj.numFmt, val);
+                              } catch {
+                                displayVal = Number.isInteger(val) ? val.toLocaleString('en-IN') : val.toFixed(2);
+                              }
                             }
                           } else {
                             displayVal = Number.isInteger(val) ? val.toLocaleString('en-IN') : val.toFixed(2);
