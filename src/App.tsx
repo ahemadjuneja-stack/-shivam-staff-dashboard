@@ -34,6 +34,7 @@ import ToursScreen from './screens/Tours';
 import TourHisabScreen from './screens/TourHisab';
 import { UserProfile } from './types';
 import { initOutboxEngine, flushOutbox } from './lib/outbox';
+import { classifySessionError } from './lib/sessionGuard';
 import ShivamLogo from './components/ShivamLogo';
 
 type NavTab = 'hisabxl' | 'tour' | 'workers' | 'tours' | 'live' | 'outside' | 'hisab' | 'settings';
@@ -64,6 +65,9 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [accessDenied, setAccessDenied] = useState<boolean>(false);
+  // Task 92: net slow par session ZINDA rakhta hai (reconnect screen) —
+  // pehle yahi window forced-logout kar deti thi (Boss ka auto-logout bug)
+  const [netHold, setNetHold] = useState<boolean>(false);
 
   // Navigation state - Hisab XL is the default tab shown after manager/admin login
   // Restore last active tab on refresh (Boss order: wahi page rahe)
@@ -121,77 +125,159 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setLoading(true);
-      if (user) {
-        try {
-          // Parallel Firestore reads — refresh par session restore almost half time leta hai
-          const [adminDoc, userDoc] = await Promise.all([
-            getDoc(doc(db, 'admins', user.uid)),
-            getDoc(doc(db, 'users', user.uid))
-          ]);
-          if (adminDoc.exists()) {
-            setCurrentUser(user);
-            setSessionRole('manager');
-            setUserProfile(null);
-            setAccessDenied(false);
-          } else {
-            if (userDoc.exists()) {
-              const profile = { uid: userDoc.id, ...(userDoc.data() as Omit<UserProfile, 'uid'>) };
-              if (profile.status === 'active') {
-                const role = (profile.role || '').toLowerCase();
-                if (role === 'manager' || role === 'sales_manager') {
-                  setCurrentUser(user);
-                  setSessionRole('manager');
-                  setUserProfile(profile);
-                  setAccessDenied(false);
-                } else if (role === 'worker') {
-                  setCurrentUser(user);
-                  setSessionRole('staff');
-                  setUserProfile(profile);
-                  setAccessDenied(false);
-                } else if (role === 'sales' || role === 'salesman') {
-                  setCurrentUser(user);
-                  setSessionRole('salesman');
-                  setUserProfile(profile);
-                  setAccessDenied(false);
-                } else {
-                  await signOut(auth);
-                  setCurrentUser(null);
-                  setSessionRole(null);
-                  setUserProfile(null);
-                  setAccessDenied(true);
-                }
-              } else {
-                await signOut(auth);
-                setCurrentUser(null);
-                setSessionRole(null);
-                setUserProfile(null);
-                setAccessDenied(true);
-              }
-            } else {
-              await signOut(auth);
-              setCurrentUser(null);
-              setSessionRole(null);
-              setUserProfile(null);
-              setAccessDenied(true);
+    let alive = true;
+    let retryTimer: number | undefined;
+    const clearRetry = () => {
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+    };
+
+    // ============================================================
+    // SESSION RESOLVER — AUTO-LOGOUT FIX (Task 92, Boss complaint:
+    // "Ye dashboard apne aap logout kyo ho jaata hai?" — screenshot:
+    // 'Access Denied — ... You have been signed out.')
+    //
+    // ROOT CAUSE: pehle ka code getDoc(admins/users) ke catch me KISI BHI
+    // error par signOut kar deta tha. Battery-guard (app hidden =
+    // disableNetwork) + tab kill + page reload = fresh load par getDoc
+    // 'unavailable' throw karta tha (WebSocket reconnect hone tak) => app
+    // KHUD Boss ko sign-out kar deti thi. Boss sach me logout hua hi nahi
+    // tha — network slow tha.
+    //
+    // AB: (1) har getDoc fail par 3 retries (1s/2s/3s backoff) Loading
+    // screen ke piche. (2) phir bhi net fail = session ZINDA rakho —
+    // netHold 'reconnect' screen + background 6s retry loop jab tak
+    // Firestore reachable. (3) sirf REAL denials par signOut: rules se
+    // 'permission-denied' (sessionGuard classify) YA data check fail
+    // (doc nahi / status inactive / role unknown — purane business rules
+    // waise hi). Net ka intezaar logout nahi hai — honest behavior.
+    // ============================================================
+    const resolve = async (user: User, attempt = 0): Promise<'ok' | 'denied' | 'net'> => {
+      try {
+        // Parallel Firestore reads — refresh par session restore fast
+        const [adminDoc, userDoc] = await Promise.all([
+          getDoc(doc(db, 'admins', user.uid)),
+          getDoc(doc(db, 'users', user.uid))
+        ]);
+        if (adminDoc.exists()) {
+          setCurrentUser(user);
+          setSessionRole('manager');
+          setUserProfile(null);
+          setAccessDenied(false);
+          return 'ok';
+        }
+        if (userDoc.exists()) {
+          const profile = { uid: userDoc.id, ...(userDoc.data() as Omit<UserProfile, 'uid'>) };
+          if (profile.status === 'active') {
+            const role = (profile.role || '').toLowerCase();
+            if (role === 'manager' || role === 'sales_manager') {
+              setCurrentUser(user);
+              setSessionRole('manager');
+              setUserProfile(profile);
+              setAccessDenied(false);
+              return 'ok';
+            }
+            if (role === 'worker') {
+              setCurrentUser(user);
+              setSessionRole('staff');
+              setUserProfile(profile);
+              setAccessDenied(false);
+              return 'ok';
+            }
+            if (role === 'sales' || role === 'salesman') {
+              setCurrentUser(user);
+              setSessionRole('salesman');
+              setUserProfile(profile);
+              setAccessDenied(false);
+              return 'ok';
             }
           }
-        } catch {
-          await signOut(auth);
-          setCurrentUser(null);
-          setSessionRole(null);
-          setUserProfile(null);
-          setAccessDenied(true);
         }
-      } else {
+        return 'denied'; // doc nahi / inactive / role unknown — REAL denial
+      } catch (err) {
+        const kind = classifySessionError(err);
+        if (kind === 'net' && attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          if (!alive) return 'net';
+          return resolve(user, attempt + 1);
+        }
+        return kind === 'net' ? 'net' : 'denied';
+      }
+    };
+
+    const denyNow = () => {
+      setNetHold(false);
+      signOut(auth).catch(() => {});
+      setCurrentUser(null);
+      setSessionRole(null);
+      setUserProfile(null);
+      setAccessDenied(true);
+    };
+
+    const retryNet = (user: User) => {
+      resolve(user).then((res) => {
+        if (!alive) return;
+        if (res === 'ok') {
+          setNetHold(false);
+          setLoading(false);
+          return;
+        }
+        if (res === 'denied') {
+          denyNow();
+          setLoading(false);
+          return;
+        }
+        retryTimer = window.setTimeout(() => {
+          if (alive) retryNet(user);
+        }, 6000);
+      });
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      clearRetry();
+      if (!user) {
+        // signed out (manual logout YA real auth event) — sirf state clear.
+        // accessDenied ko yahan touch NAHI karte (denyNow -> signOut -> yeh
+        // branch fire hota hai; denied screen ko chhupana galat hoga).
         setCurrentUser(null);
         setSessionRole(null);
         setUserProfile(null);
+        setNetHold(false);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+      setLoading(true);
+      setAuthError(''); // stale login-error text mat rakho (role resolve hoke dashboard jayega)
+      resolve(user).then((res) => {
+        if (!alive) return;
+        if (res === 'ok') {
+          setNetHold(false);
+          setLoading(false);
+          return;
+        }
+        if (res === 'denied') {
+          denyNow();
+          setLoading(false);
+          return;
+        }
+        // NET — session zinda, reconnect screen + background retry
+        setCurrentUser(user);
+        setSessionRole(null);
+        setUserProfile(null);
+        setNetHold(true);
+        setLoading(false);
+        retryTimer = window.setTimeout(() => {
+          if (alive) retryNet(user);
+        }, 6000);
+      });
     });
-    return () => unsubscribe();
+    return () => {
+      alive = false;
+      unsubscribe();
+      clearRetry();
+    };
   }, []);
 
   // Real-time pending registration count badge for the Staff Management tab
@@ -343,6 +429,28 @@ export default function App() {
           >
             Back to Login
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 2.5 NET HOLD — Task 92 (auto-logout fix): session ZINDA hai, sirf
+  // internet wapas aane ka intezaar. Pehle YAHIN par net error aate hi
+  // forced signOut ho jata tha ('Access Denied' screenshot = yahi tha).
+  // Ab logout NAHI — amber reconnect spinner, background 6s retry loop,
+  // net aate hi role resolve hoke dashboard khud khul jayega.
+  if (netHold) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-200">
+        <div className="flex flex-col items-center gap-7 px-6 text-center">
+          <ShivamLogo size="xl" />
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-amber-400 border-t-transparent"></div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-slate-400">
+            Internet slow hai — reconnect ho raha hai…
+          </p>
+          <p className="-mt-4 text-[10.5px] text-slate-600">
+            Session safe hai, logout nahi hua. Net aate hi dashboard khulega.
+          </p>
         </div>
       </div>
     );
