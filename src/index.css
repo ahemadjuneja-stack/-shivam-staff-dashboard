@@ -55,18 +55,17 @@ body {
   animation: silverShine 7s linear infinite;
 }
 
-/* ===== PREMIUM DARK XL SHEET SCROLLBARS (Task 73 — slide line ab dark premium
-   grid ke saath match: navy track + indigo-steel gradient thumb, clearly visible) ===== */
+/* ===== TASK 76 — LIGHT MONEY-APP SCROLLBARS (Paytm Business look — slide line light) ===== */
 .xl-scroll::-webkit-scrollbar { height: 14px; width: 12px; }
-.xl-scroll::-webkit-scrollbar-track { background: #0a1122; border-radius: 10px; }
+.xl-scroll::-webkit-scrollbar-track { background: #eef2f9; border-radius: 10px; }
 .xl-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #3d5183, #26365e);
+  background: linear-gradient(180deg, #c5d0e6, #9fb0d1);
   border-radius: 10px;
-  border: 3px solid #0a1122;
+  border: 3px solid #eef2f9;
 }
-.xl-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #4d64a0, #314273); }
-.xl-scroll::-webkit-scrollbar-corner { background: #0a1122; }
-.xl-scroll { scrollbar-color: #314273 #0a1122; }
+.xl-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #8fa3cc, #7d92bd); }
+.xl-scroll::-webkit-scrollbar-corner { background: #eef2f9; }
+.xl-scroll { scrollbar-color: #9fb0d1 #eef2f9; }
 
 /* ===== TASK 74 — PREMIUM PRODUCT FINISH (Boss: 'high level professional, XL jaisa na lage') ===== */
 /* Button shine sweep — hero buttons par soft light sweep (boring screen nahi) */
@@ -89,34 +88,26 @@ body {
   100% { left: 140%; }
 }
 
-/* ===== TASK 75 — MIDNIGHT LUXE MOTION LAYER (Boss: 'maza nahi aa raha') ===== */
-/* Animated aurora border — grid card ke charo taraf rotating light sweep */
-.aurora-frame { position: relative; overflow: hidden; padding: 1.5px; }
-.aurora-frame::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 260%;
-  padding-bottom: 260%;
-  transform: translate(-50%, -50%);
-  background: conic-gradient(
-    from 0deg,
-    rgba(52, 211, 153, 0) 0deg,
-    rgba(52, 211, 153, 0.95) 45deg,
-    rgba(52, 211, 153, 0) 95deg,
-    rgba(129, 140, 248, 0) 135deg,
-    rgba(129, 140, 248, 0.95) 185deg,
-    rgba(129, 140, 248, 0) 235deg,
-    rgba(232, 121, 249, 0) 265deg,
-    rgba(240, 171, 252, 0.85) 305deg,
-    rgba(232, 121, 249, 0) 360deg
+/* ===== TASK 76 — LIGHT PREMIUM MONEY-APP MOTION LAYER ===== */
+/* CASH COUNTER title — navy-blue gradient shine (light bg par visible brand shine) */
+.cash-title {
+  background-image: linear-gradient(
+    100deg,
+    #16336b 0%,
+    #2f5bbd 20%,
+    #7fa3e8 38%,
+    #1d4ed8 50%,
+    #7fa3e8 62%,
+    #2f5bbd 80%,
+    #16336b 100%
   );
-  animation: auroraSpin 9s linear infinite;
-  pointer-events: none;
-}
-@keyframes auroraSpin {
-  to { transform: translate(-50%, -50%) rotate(360deg); }
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: 'Aboreto', 'Didot', 'Bodoni MT', 'Times New Roman', serif;
+  font-weight: 700;
+  animation: silverShine 5s linear infinite;
 }
 
 /* Drifting ambient blobs — screen hamesha zinda */
@@ -125,27 +116,27 @@ body {
   50% { transform: translate(36px, -26px) scale(1.18); opacity: 1; }
 }
 
-/* Header strip — slow sapphire sheen drift (boring flat header nahi) */
+/* Header strip — slow blue sheen drift (boring flat header nahi) */
 @keyframes hdrShift {
   from { background-position: 0% 50%; background-size: 230% 100%; }
   to { background-position: 100% 50%; background-size: 230% 100%; }
 }
 .hdr-anim { animation: hdrShift 7s ease-in-out infinite alternate; }
 
-/* Computed/formula cells — emerald heartbeat glow (totals saans lete hai) */
+/* Computed/formula cells — money-green soft pulse (totals highlight) */
 @keyframes cellPulse {
-  0%, 100% { text-shadow: 0 0 9px rgba(110, 231, 183, 0.4); }
-  50% { text-shadow: 0 0 20px rgba(110, 231, 183, 0.85), 0 0 36px rgba(16, 185, 129, 0.35); }
+  0%, 100% { text-shadow: 0 0 6px rgba(5, 150, 105, 0.25); }
+  50% { text-shadow: 0 0 14px rgba(5, 150, 105, 0.5); }
 }
 .cell-glow { animation: cellPulse 2.6s ease-in-out infinite; }
 
-/* Row hover — poori row soft lift; cell hover — emerald ring glow */
+/* Row hover — halki depth; cell hover — emerald ring + soft lift shadow */
 .xl-row { transition: filter 0.15s ease; }
-.xl-row:hover .xl-cell { filter: brightness(1.16); }
+.xl-row:hover .xl-cell { filter: saturate(1.25) brightness(0.985); }
 .xl-cell { transition: box-shadow 0.12s ease, filter 0.12s ease; }
 .xl-row .xl-cell:hover {
-  box-shadow: inset 0 0 0 1.5px rgba(110, 231, 183, 0.6), 0 0 16px rgba(16, 185, 129, 0.28);
-  filter: brightness(1.38);
+  box-shadow: inset 0 0 0 1.5px rgba(16, 185, 129, 0.55), 0 6px 16px -8px rgba(15, 40, 90, 0.35);
+  filter: saturate(1.35);
 }
 
 /* Hero buttons — pulsing emerald glow (button akele shine kare) */

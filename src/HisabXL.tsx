@@ -76,88 +76,104 @@ const todayDayStr = () => String(new Date().getDate());
 const HG_COL = 22;
 
 // ============================================================
-// SHIVAM CASH COUNTER — MIDNIGHT LUXE THEME (Task 75)
-// Boss: 'abhi bhi maza nahi aa raha, muje jaisa chahiye waisa nahi' —
-// Task 74 ki flat muddy navy palette ka poora replacement. Ab VIVID
-// jewel-glass design: har section ki apni rich saturated identity
-// (sapphire bill area / emerald dept box / royal violet Cash Given /
-// bronze parcel side), har cell me glass depth (top-light gradient),
-// bright glow text, sapphire-glow header strip. Boss rule same:
-// 'line/box/calculation PURANE rahenge' — boxes/lines/merges/rows/cols
-// positions EXACT same, calculation untouched. Grid data / formulas /
-// XL export 100% untouched — sirf screen colors.
+// SHIVAM CASH COUNTER — LIGHT PREMIUM MONEY-APP THEME (Task 76)
+// Boss ne choose kiya: LIGHT look + SOFT MODERN grid + Paytm Business
+// reference + mobile smart-fit. Dark palettes (T73/74/75) full replace.
+// - Grid boxes: position/count SAME, par ab rounded soft tiles with
+//   spacing (border-separate) — Excel-cell feel gayab, modern app tiles.
+// - Sections: white/ivory glass + soft tints (emerald dept box / gold
+//   Cash Given / sky parcel) + deep blue header strip (money-app look).
+// - Numbers: bold tabular — Paytm jaise bade amounts feel.
+// - Boss rule same: line/box/calculation data EXACT purana — grid data /
+//   formulas / merges / XL export 100% untouched, sirf screen colors.
 // ============================================================
-const GRID_BORDER = '#31427e';   // indigo hairline grid lines (boxes position SAME)
-const SECTION_EDGE = '#6d85e0';  // glowing section boundary accent line
+const GRID_BORDER = '#dfe6f3';   // soft tile border (boxes position SAME)
+const SECTION_EDGE = '#a9bde4';  // section boundary accent line
+const TILE_RADIUS = 8;           // rounded soft tiles
 
 const PREMIUM = {
-  base: 'linear-gradient(180deg, #1b2a62 0%, #121c44 100%)',      // sapphire glass
-  baseAlt: 'linear-gradient(180deg, #223472 0%, #182552 100%)',   // zebra lighter glass
-  deptBox: 'linear-gradient(180deg, #0e5f47 0%, #093d2d 100%)',   // emerald glass — department details (A-C)
-  cashGiven: 'linear-gradient(180deg, #4b2b96 0%, #2f1c66 100%)', // royal violet glass — Cash Given side (M-P)
-  parcel: 'linear-gradient(180deg, #7d4e12 0%, #57360c 100%)',    // bronze glass — parcel side (Q-AB)
-  headerGrad: 'linear-gradient(115deg, #2d52b0 0%, #1c2f6e 30%, #2a4c9e 55%, #16255c 80%, #2d52b0 100%)' // sapphire glow header
+  base: 'linear-gradient(180deg, #ffffff 0%, #f6f9fe 100%)',      // white glass
+  baseAlt: 'linear-gradient(180deg, #fbfcff 0%, #f2f6fd 100%)',   // zebra soft blue
+  deptBox: 'linear-gradient(180deg, #e9f9f1 0%, #d9f2e6 100%)',   // emerald tint — department details (A-C)
+  cashGiven: 'linear-gradient(180deg, #fef6e0 0%, #fdeec4 100%)', // gold tint — Cash Given side (cash = gold)
+  parcel: 'linear-gradient(180deg, #eaf5fe 0%, #dcecfc 100%)',    // sky tint — parcel side (Q-AB)
+  headerGrad: 'linear-gradient(135deg, #1e3a8a 0%, #2456d6 55%, #1d4ed8 100%)' // money-app blue header
 };
 
-// Canon accent fills -> premium glow accents (section identity same rehti hai)
+// Canon accent fills -> soft light tints (section identity preserve)
 const CANON_BG_MAP: Record<string, string> = {
-  '073763': PREMIUM.headerGrad,                                  // navy headers -> sapphire glow gradient
-  '274E13': 'linear-gradient(180deg, #0f7254 0%, #0a4a37 100%)', // dark green -> emerald jewel gradient
-  '38761D': '#12765a', // green -> emerald
-  '783F04': '#6f4715', // brown -> bronze
-  '4C1130': '#5f1c49', // maroon -> wine jewel
-  'EAD1DC': '#4e2570', // pink band -> orchid
-  'B6D7A8': '#0e6b4f', // green band -> emerald
-  'D9EAD3': '#128767', // green band light -> bright emerald
-  'E06666': '#822350', // red -> rose jewel
-  'E6B8AF': '#6d2a44', // light red -> rose deep
-  'BF9000': '#856111', // gold -> amber
-  'FFD966': '#98751a', // yellow -> bright gold
-  'FFF2CC': '#6b5518', // cream -> soft amber
-  'EBEFF1': '#1c2a5c', // light gray -> alt navy
-  'FFFFFF': ''         // white -> section glass (zebra/section)
+  '073763': PREMIUM.headerGrad,                                  // navy headers -> money-app blue gradient
+  '274E13': 'linear-gradient(180deg, #e3f8ee 0%, #d2f2e3 100%)', // dark green -> emerald tint
+  '38761D': '#e0f6ec', // green -> emerald tint
+  '783F04': '#fdf1d9', // brown -> gold tint
+  '4C1130': '#fde9f1', // maroon -> rose tint
+  'EAD1DC': '#fbeef4', // pink band -> soft rose
+  'B6D7A8': '#e4f7ec', // green band -> emerald tint
+  'D9EAD3': '#dcf8ea', // green band light -> brighter emerald tint
+  'E06666': '#fee5e5', // red -> soft rose
+  'E6B8AF': '#feecec', // light red -> rose tint
+  'BF9000': '#fdf2d7', // gold -> gold tint
+  'FFD966': '#fef3cf', // yellow -> bright gold tint
+  'FFF2CC': '#fef9e3', // cream -> soft gold
+  'EBEFF1': '#f1f5fb', // light gray -> gray-blue tint
+  'FFFFFF': ''         // white -> section glass
 };
 
-// Canon font colors -> premium light accents
+// Canon font colors -> light-theme readable accents
 const CANON_FG_MAP: Record<string, string> = {
-  '000000': '#eaf0ff',
-  '0C343D': '#8fd8f8',
-  '073763': '#9db9ff',
-  '4C1130': '#ffabe0',
-  '660000': '#ffa5a5',
-  '7F6000': '#ffd76a',
-  'C27BA0': '#f5b3ff',
-  'FF0000': '#ff9fb2',
-  '0000FF': '#9cc6ff',
-  'FFFFFF': '#f7faff',
-  'EFEFEF': '#eaeffc',
-  'EAD1DC': '#f3c9f0'
+  '000000': '#1e293b',
+  '0C343D': '#0e7490',
+  '073763': '#1d4ed8',
+  '4C1130': '#9d174d',
+  '660000': '#b91c1c',
+  '7F6000': '#a16207',
+  'C27BA0': '#be185d',
+  'FF0000': '#dc2626',
+  '0000FF': '#2563eb',
+  'FFFFFF': '#ffffff',
+  'EFEFEF': '#334155',
+  'EAD1DC': '#9d174d'
 };
 
-// Section-aware jewel-glass background — structure/lines EXACT same, sirf colors
+// Dark canon fills par original white font hota tha — light tints par white
+// text padhta nahi, isliye per-fill dark accent text (fill ke saath match)
+const DARK_FILL_FONT: Record<string, string> = {
+  '073763': '#ffffff',
+  '274E13': '#065f46',
+  '38761D': '#047857',
+  '4C1130': '#9d174d',
+  '783F04': '#92400e',
+  'E06666': '#b91c1c'
+};
+
+// Section-aware light glass background — structure/lines EXACT same, sirf colors
 const sectionCellBg = (r: number, c: number, canonColor: string | null): string => {
   if (canonColor) {
     const mapped = CANON_BG_MAP[canonColor.replace('#', '').toUpperCase()];
     if (mapped) return mapped;
   }
-  if (r === 0) return PREMIUM.headerGrad;           // glowing header strip
+  if (r === 0) return PREMIUM.headerGrad;           // money-app blue header strip
   if (c <= 2) return PREMIUM.deptBox;               // department details box
-  if (c >= 12 && c <= 15) return PREMIUM.cashGiven; // office Cash Given side
-  if (c >= 16) return PREMIUM.parcel;               // parcel register side
-  return r % 2 === 1 ? PREMIUM.baseAlt : PREMIUM.base; // zebra rows
+  if (c >= 12 && c <= 15) return PREMIUM.cashGiven; // office Cash Given side (gold)
+  if (c >= 16) return PREMIUM.parcel;               // parcel register side (sky)
+  return r % 2 === 1 ? PREMIUM.baseAlt : PREMIUM.base; // zebra white rows
 };
 
-const sectionCellFont = (r: number, c: number, canonColor: string | null, computed: boolean): string => {
-  if (computed) return '#8bf3c4';                   // formula cells — emerald glow
-  if (canonColor) {
-    const mapped = CANON_FG_MAP[canonColor.replace('#', '').toUpperCase()];
+const sectionCellFont = (r: number, c: number, canonFill: string | null, canonFontColor: string | null, computed: boolean): string => {
+  if (computed) return '#047857';                   // formula cells — money green
+  if (canonFill) {
+    const dk = DARK_FILL_FONT[canonFill.replace('#', '').toUpperCase()];
+    if (dk) return dk;
+  }
+  if (r === 0) return '#ffffff';                    // header text on blue
+  if (canonFontColor) {
+    const mapped = CANON_FG_MAP[canonFontColor.replace('#', '').toUpperCase()];
     if (mapped) return mapped;
   }
-  if (r === 0) return '#f4f8ff';                    // header text
-  if (c <= 2) return '#d9f6e8';                     // dept box — mint
-  if (c >= 12 && c <= 15) return '#efe6ff';         // cash given — lavender
-  if (c >= 16) return '#ffedcb';                    // parcel — warm cream
-  return '#e9efff';
+  if (c <= 2) return '#065f46';                     // dept box — emerald-800
+  if (c >= 12 && c <= 15) return '#92400e';         // cash given — amber-800
+  if (c >= 16) return '#0c4a6e';                    // parcel — sky-900
+  return '#1e293b';
 };
 
 export default function HisabXLScreen() {
@@ -174,6 +190,14 @@ export default function HisabXLScreen() {
   // Editing cell state
   const [editingCell, setEditingCell] = useState<EditingCellState | null>(null);
   const [savingCell, setSavingCell] = useState<boolean>(false);
+
+  // Mobile smart-fit (Boss: dono par perfect) — phone par columns narrow + font compact
+  const [isMobile, setIsMobile] = useState<boolean>(typeof window !== 'undefined' && window.innerWidth < 640);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Toast feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -583,55 +607,55 @@ export default function HisabXLScreen() {
   const todayLabel = `${String(new Date().getDate()).padStart(2, '0')} ${monthShort && selectedMonthId === realMonthId() ? monthShort.toUpperCase() : ''}`.trim();
 
   return (
-    <div className="hisab-fullbleed flex min-h-screen flex-col bg-transparent text-slate-100">
-      {/* Toast Notification (dark — navy theme) */}
+    <div className="hisab-fullbleed flex min-h-screen flex-col bg-gradient-to-b from-[#f5f8fd] via-[#eff4fb] to-[#e9eef9] text-slate-800">
+      {/* Toast Notification (light money-app style) */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border px-5 py-3.5 shadow-2xl ring-1 ring-white/10 backdrop-blur-md text-xs font-bold transition-all ${
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border px-5 py-3.5 shadow-xl shadow-slate-900/10 ring-1 ring-black/5 backdrop-blur-md text-xs font-bold transition-all ${
             toast.type === 'success'
-              ? 'border-emerald-500/40 bg-slate-900 text-emerald-300'
+              ? 'border-emerald-500/40 bg-white text-emerald-700'
               : toast.type === 'error'
-              ? 'border-rose-500/40 bg-slate-900 text-rose-300'
-              : 'border-indigo-500/40 bg-slate-900 text-indigo-300'
+              ? 'border-rose-500/40 bg-white text-rose-700'
+              : 'border-indigo-500/40 bg-white text-indigo-700'
           }`}
         >
           {toast.type === 'success' ? (
-            <Check className="h-4 w-4 text-emerald-400" />
+            <Check className="h-4 w-4 text-emerald-500" />
           ) : toast.type === 'error' ? (
-            <AlertCircle className="h-4 w-4 text-rose-400" />
+            <AlertCircle className="h-4 w-4 text-rose-500" />
           ) : (
-            <Calculator className="h-4 w-4 text-indigo-400" />
+            <Calculator className="h-4 w-4 text-indigo-500" />
           )}
           <span>{toast.message}</span>
-          <button onClick={() => setToast(null)} className="ml-2 text-slate-500 hover:text-slate-300">
+          <button onClick={() => setToast(null)} className="ml-2 text-slate-400 hover:text-slate-600">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
 
-      {/* ===== PREMIUM PRODUCT HEADER (company website style — Boss: 'professional company style') ===== */}
-      <div className="border-b border-slate-800/70 bg-gradient-to-r from-slate-950 via-[#0d1b3a] to-slate-950">
+      {/* ===== LIGHT MONEY-APP HEADER (Paytm Business style — Boss choice) ===== */}
+      <div className="border-b border-slate-200/80 bg-white/85 backdrop-blur">
         <div className="h-[2px] w-full flow-line bg-gradient-to-r from-emerald-400 via-indigo-400 via-violet-400 to-emerald-400" />
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-700 shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-300/40">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-300/50">
               <FileSpreadsheet className="h-6 w-6 text-white" />
             </div>
             <div className="leading-tight">
-              <h1 className="shivam-silver shivam-silver-shine-slow text-2xl font-black tracking-[0.06em]">CASH COUNTER</h1>
-              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-300/80">Daily Excel Accounts — Chart /10</p>
+              <h1 className="cash-title text-2xl font-black tracking-[0.06em]">CASH COUNTER</h1>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-600">Daily Excel Accounts — Chart /10</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black tracking-wider text-emerald-300">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-50 px-3 py-1.5 text-[10px] font-black tracking-wider text-emerald-700">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
               </span>
               LIVE SYNC
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/40 bg-gradient-to-r from-indigo-500/20 via-violet-500/15 to-indigo-500/20 px-3 py-1.5 text-[10px] font-black tracking-wider text-indigo-200 ring-1 ring-inset ring-indigo-300/20">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-50 px-3 py-1.5 text-[10px] font-black tracking-wider text-blue-700 ring-1 ring-inset ring-blue-300/30">
               <Calendar className="h-3 w-3" />
               TODAY • {todayLabel}
             </span>
@@ -647,8 +671,8 @@ export default function HisabXLScreen() {
         </div>
       </div>
 
-      {/* ===== CONTROL TOOLBAR (sticky website-style button bar) ===== */}
-      <div className="sticky top-0 z-40 border-b border-slate-700/60 bg-slate-950/90 shadow-lg shadow-black/20 backdrop-blur">
+      {/* ===== CONTROL TOOLBAR (sticky light money-app bar) ===== */}
+      <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur">
         <div className="flex flex-wrap items-center gap-2 px-4 py-2">
           {/* Month Selector Dropdown */}
           <select
@@ -658,7 +682,7 @@ export default function HisabXLScreen() {
               setSheetsCache({});
             }}
             disabled={loadingMonths || months.length === 0}
-            className="rounded-lg border border-slate-600/70 bg-slate-950/90 px-3 py-1.5 text-xs font-bold text-slate-100 ring-1 ring-white/5 transition hover:border-slate-500 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none disabled:opacity-50"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/25 focus:outline-none disabled:opacity-50"
           >
             {months.length === 0 ? (
               <option value="">(No months yet)</option>
@@ -671,27 +695,27 @@ export default function HisabXLScreen() {
             )}
           </select>
 
-          <span className="mx-1 hidden h-5 w-px bg-slate-700/70 sm:block" />
+          <span className="mx-1 hidden h-5 w-px bg-slate-300 sm:block" />
 
           {/* Day navigation buttons — pichli / agli sheet */}
           <button
             onClick={() => dayNav(-1)}
             title="Pichli sheet"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:border-emerald-400/40 hover:from-slate-700 hover:text-emerald-300 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             onClick={() => dayNav(1)}
             title="Agli sheet"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:border-emerald-400/40 hover:from-slate-700 hover:text-emerald-300 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
           <button
             onClick={jumpToday}
             title="Aaj ki sheet par jump karo (fresh 0)"
-            className="btn-shine flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-3 text-[11px] font-black tracking-wide text-white shadow-lg shadow-indigo-600/25 ring-1 ring-indigo-300/30 transition-all hover:-translate-y-px hover:shadow-xl disabled:opacity-40"
+            className="btn-shine flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 text-[11px] font-black tracking-wide text-white shadow-lg shadow-blue-600/25 ring-1 ring-blue-300/30 transition-all hover:-translate-y-px hover:shadow-xl disabled:opacity-40"
           >
             <Calendar className="h-3.5 w-3.5" />
             TODAY
@@ -700,9 +724,9 @@ export default function HisabXLScreen() {
             onClick={() => fetchMonths(false, selectedMonthId)}
             title="Refresh Months"
             disabled={loadingMonths}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-600/70 bg-gradient-to-b from-slate-800 to-slate-900 text-slate-300 ring-1 ring-white/5 transition hover:border-emerald-400/40 hover:from-slate-700 hover:text-emerald-300 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-indigo-400' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-blue-500' : ''}`} />
           </button>
         </div>
       </div>
@@ -712,10 +736,10 @@ export default function HisabXLScreen() {
         <OutboxBanner />
       </div>
 
-      {/* Day Tabs Bar (Excel sheet tabs — navy workbook look) */}
+      {/* Day Tabs Bar (light pill tabs — money-app style) */}
       {sortedSheetNames.length > 0 ? (
         <div className="px-4 pt-3">
-          <div className="flex items-stretch gap-0 overflow-x-auto rounded-t-xl border border-b-0 border-slate-700/60 bg-gradient-to-b from-slate-900 to-slate-950/70 px-1 pt-1 shadow-lg shadow-black/25">
+          <div className="flex items-center gap-1.5 overflow-x-auto rounded-xl bg-white/70 p-1.5 shadow-sm ring-1 ring-slate-200/80 backdrop-blur">
             {sortedSheetNames.map((name) => {
               const isSelected = activeSheetName === name;
               const isTodayTab = selectedMonthId === realMonthId() && name === todayDayStr();
@@ -724,16 +748,16 @@ export default function HisabXLScreen() {
                   key={name}
                   onClick={() => setActiveSheetName(name)}
                   title={isTodayTab ? 'Aaj ka din — fresh 0 se start' : isDaySheetName(name) ? `Day ${name}` : 'Haste & Reminder'}
-                  className={`shrink-0 whitespace-nowrap rounded-t-lg border-r border-slate-700/60 px-3.5 py-1.5 text-xs font-semibold transition ${
+                  className={`shrink-0 whitespace-nowrap rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
                     isSelected
-                      ? 'bg-gradient-to-b from-[#14225a] to-[#0d1740] font-bold text-emerald-300 shadow-[inset_0_2px_0_0_rgb(52_211_153),0_0_28px_rgba(52,211,153,0.3)]'
+                      ? 'bg-white font-bold text-emerald-600 shadow-[0_4px_14px_-6px_rgba(15,40,90,0.35),inset_0_2px_0_0_rgb(16,185,129)] ring-1 ring-slate-200/70'
                       : isTodayTab
-                      ? 'text-indigo-300 hover:bg-slate-800/60'
-                      : 'text-slate-400 hover:bg-slate-800/60'
+                      ? 'text-blue-600 hover:bg-white/80'
+                      : 'text-slate-500 hover:bg-white/80'
                   }`}
                 >
                   {name}
-                  {isTodayTab && <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400 align-middle shadow-[0_0_6px_rgba(129,140,248,0.9)]" />}
+                  {isTodayTab && <span className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500 align-middle shadow-[0_0_6px_rgba(59,130,246,0.9)]" />}
                 </button>
               );
             })}
@@ -741,7 +765,7 @@ export default function HisabXLScreen() {
         </div>
       ) : (
         <div className="px-4 pt-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 text-center text-xs text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white/70 p-6 text-center text-xs text-slate-500">
             Workbook load ho raha hai...
           </div>
         </div>
@@ -750,9 +774,9 @@ export default function HisabXLScreen() {
       {/* FRESH DAY indicator — aaj ki sheet par (roz naya date 0 se start) */}
       {isTodaySheet && (
         <div className="px-4 pt-2">
-          <div className="flex flex-wrap items-center gap-x-3 rounded-lg border border-indigo-400/30 bg-gradient-to-r from-indigo-500/20 via-indigo-500/5 to-transparent px-3.5 py-2 text-[11px] font-bold text-indigo-200 ring-1 ring-inset ring-indigo-300/10">
+          <div className="flex flex-wrap items-center gap-x-3 rounded-lg border border-blue-400/40 bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-transparent px-3.5 py-2 text-[11px] font-bold text-blue-800 ring-1 ring-inset ring-blue-300/30">
             <span className="font-black tracking-wider">FRESH DAY — DAY {dayNumForHeader}</span>
-            <span className="font-semibold text-indigo-400/70">All counters started at 0 • Opening Cash In Hand 200 + 200 (chart)</span>
+            <span className="font-semibold text-blue-500/80">All counters started at 0 • Opening Cash In Hand 200 + 200 (chart)</span>
           </div>
         </div>
       )}
@@ -760,30 +784,30 @@ export default function HisabXLScreen() {
       {/* Excel Sheet Table View */}
       {loadingSheet ? (
         <div className="px-4 pt-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-10 text-center text-xs text-slate-500">
-            <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent"></div>
+          <div className="rounded-xl border border-slate-200 bg-white/70 p-10 text-center text-xs text-slate-500">
+            <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
             <p className="font-semibold">Loading sheet "{activeSheetName}"...</p>
           </div>
         </div>
       ) : liveGrid.length === 0 ? (
         <div className="px-4 pt-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-10 text-center text-xs text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-white/70 p-10 text-center text-xs text-slate-500">
             Sheet data load nahi ho saka ya khali hai.
           </div>
         </div>
       ) : (
         <div className="relative px-4 pb-8 pt-3">
-          {/* Ambient premium glow — drifting aurora blobs (screen ko XL-copy se PRODUCT banata hai) */}
-          <div className="pointer-events-none absolute -top-8 left-16 h-44 w-44 rounded-full bg-emerald-500/15 blur-3xl" style={{ animation: 'blobDrift 9s ease-in-out infinite' }} />
-          <div className="pointer-events-none absolute right-24 top-10 h-52 w-52 rounded-full bg-indigo-500/15 blur-3xl" style={{ animation: 'blobDrift 11s ease-in-out infinite 1.2s' }} />
-          <div className="pointer-events-none absolute bottom-10 left-1/3 h-40 w-40 rounded-full bg-violet-500/10 blur-3xl" style={{ animation: 'blobDrift 13s ease-in-out infinite 0.6s' }} />
-          {/* MIDNIGHT LUXE grid card — animated aurora border frame (data/formulas untouched) */}
-          <div className="aurora-frame relative rounded-b-xl rounded-tr-xl shadow-[0_24px_90px_-24px_rgba(16,185,129,0.28)]">
-            <div className="relative z-10 bg-gradient-to-b from-[#0c1428] to-[#0a1122]">
+          {/* Ambient soft glow blobs — light theme par pastel depth */}
+          <div className="pointer-events-none absolute -top-8 left-16 h-44 w-44 rounded-full bg-emerald-400/25 blur-3xl" style={{ animation: 'blobDrift 9s ease-in-out infinite' }} />
+          <div className="pointer-events-none absolute right-24 top-10 h-52 w-52 rounded-full bg-blue-400/25 blur-3xl" style={{ animation: 'blobDrift 11s ease-in-out infinite 1.2s' }} />
+          <div className="pointer-events-none absolute bottom-10 left-1/3 h-40 w-40 rounded-full bg-violet-400/20 blur-3xl" style={{ animation: 'blobDrift 13s ease-in-out infinite 0.6s' }} />
+          {/* LIGHT MONEY-APP grid card — white glass, soft shadow, top accent strip */}
+          <div className="relative overflow-hidden rounded-2xl bg-white shadow-[0_24px_70px_-28px_rgba(15,40,90,0.35)] ring-1 ring-slate-200/80">
+            <div className="h-[3px] w-full flow-line bg-gradient-to-r from-emerald-400 via-blue-400 via-violet-400 to-emerald-400" />
             <div className="xl-scroll overflow-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
               <table
-                className="w-max select-text border-collapse"
-                style={{ minWidth: '100%', fontFamily: "'Comfortaa', 'Segoe UI', sans-serif" }}
+                className="w-max select-text"
+                style={{ minWidth: '100%', fontFamily: "'Comfortaa', 'Segoe UI', sans-serif", borderCollapse: 'separate', borderSpacing: isMobile ? '2px' : '3px' }}
               >
                 {/* Invisible width-holder strip — Boss order: side ke 1-2-3-4 row numbers
                     + upar A-B-C-D column letters REMOVE (sirf column width hints bache) */}
@@ -792,11 +816,13 @@ export default function HisabXLScreen() {
                     {Array.from({ length: visibleColCount }).map((_, c) => {
                       if (c === HG_COL) return null;
                       const wch = currentSheet?.cols?.[c];
-                      const widthPx = isDaySheet
+                      const basePx = isDaySheet
                         ? (CANON_COL_WIDTHS_PX[c] ?? 93)
                         : wch
                         ? Math.round(wch * 7) + 5
                         : 93;
+                      // Phone smart-fit — mobile par columns 22% narrow (zyada area dikhe)
+                      const widthPx = Math.round(basePx * (isMobile ? 0.78 : 1));
                       return (
                         <th
                           key={c}
@@ -834,25 +860,28 @@ export default function HisabXLScreen() {
                             : null;
                         }
 
-                        const bgColor = sectionCellBg(r, c, colorToCss(styleObj?.fill?.fgColor));
-                        const fontColor = sectionCellFont(r, c, colorToCss(styleObj?.font?.color), computed);
-                        // Formula cells — emerald wash overlay (premium auto-glow)
-                        const bgFinal = computed ? `linear-gradient(rgba(110,231,183,0.13), rgba(110,231,183,0.13)), ${bgColor}` : bgColor;
-                        const fontWeight = computed ? 'bold' : styleObj?.font?.bold ? 'bold' : 'normal';
+                        const canonFill = colorToCss(styleObj?.fill?.fgColor);
+                        const canonFontC = colorToCss(styleObj?.font?.color);
+                        const bgColor = sectionCellBg(r, c, canonFill);
+                        const fontColor = sectionCellFont(r, c, canonFill, canonFontC, computed);
+                        // Formula cells — money-green wash overlay (Paytm highlight feel)
+                        const bgFinal = computed ? `linear-gradient(rgba(16,185,129,0.12), rgba(16,185,129,0.12)), ${bgColor}` : bgColor;
+                        const fontWeight = computed ? 'bold' : isNumericValue(val) ? 700 : styleObj?.font?.bold ? 'bold' : 'normal';
                         const fontStyle = styleObj?.font?.italic ? 'italic' : 'normal';
-                        const fontSize = styleObj?.font?.sz ? `${Math.round(styleObj.font.sz * 1.33)}px` : '13px';
+                        const fontSize = styleObj?.font?.sz ? `${Math.round(styleObj.font.sz * 1.33)}px` : isMobile ? '11px' : '13px';
                         const textAlign = styleObj?.alignment?.horizontal ?? (isNumericValue(val) ? 'right' : 'left');
                         const whiteSpace = styleObj?.alignment?.wrapText ? 'normal' : 'nowrap';
-                        // Header strip cells — animated sapphire sheen (screen zinda rahe)
+                        // Header strip cells — animated blue sheen (screen zinda rahe)
                         const isHdrCell = bgColor === PREMIUM.headerGrad;
 
-                        // Premium hairline grid lines — position EXACT same (Boss rule);
-                        // section boundaries par stronger accent line = premium separation
+                        // Soft tile borders — position EXACT same (Boss rule);
+                        // rounded corners + spacing = Excel-cell feel gayab, app tiles feel
                         const isSectionEdge = c === 3 || c === 12 || c === 16;
-                        const borderTop = `1px solid ${GRID_BORDER}`;
-                        const borderBottom = `1px solid ${GRID_BORDER}`;
-                        const borderLeft = isSectionEdge ? `2px solid ${SECTION_EDGE}` : `1px solid ${GRID_BORDER}`;
-                        const borderRight = `1px solid ${GRID_BORDER}`;
+                        const tileBorder = isHdrCell ? '1px solid rgba(255,255,255,0.35)' : `1px solid ${GRID_BORDER}`;
+                        const borderTop = tileBorder;
+                        const borderBottom = tileBorder;
+                        const borderLeft = isSectionEdge && !isHdrCell ? `2px solid ${SECTION_EDGE}` : tileBorder;
+                        const borderRight = tileBorder;
 
                         let displayVal: string | number | null = val;
                         if (val === null || val === undefined) {
@@ -891,7 +920,7 @@ export default function HisabXLScreen() {
                               fontSize,
                               lineHeight: 1.15,
                               fontVariantNumeric: 'tabular-nums',
-                              textShadow: isHdrCell ? '0 1px 12px rgba(147,180,255,0.55)' : undefined,
+                              borderRadius: TILE_RADIUS,
                               letterSpacing: r === 0 ? '0.05em' : undefined,
                               textAlign: textAlign as any,
                               whiteSpace: whiteSpace as any,
@@ -914,7 +943,7 @@ export default function HisabXLScreen() {
                                 >
                                   <option value="">(Blank)</option>
                                   {(editingCell.col === 5 ? ['Cash', 'Receipt'] : editingCell.col === 16 ? ['Transport', 'Courior', 'In Hand', 'Other Party', 'Riksha'] : ['1', '2']).map((opt) => (
-                                    <option key={opt} value={opt} className="bg-[#101b3e] text-slate-100">{opt}</option>
+                                    <option key={opt} value={opt} className="bg-white text-slate-800">{opt}</option>
                                   ))}
                                 </select>
                               ) : (
@@ -930,7 +959,7 @@ export default function HisabXLScreen() {
                                   }}
                                   onBlur={() => handleSaveCell()}
                                   className="m-0 w-full border-0 bg-transparent p-0 outline-none"
-                                  style={{ fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', fontStyle: 'inherit', color: 'inherit', backgroundColor: 'transparent', caretColor: '#34d399', textAlign: textAlign as any }}
+                                  style={{ fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', fontStyle: 'inherit', color: 'inherit', backgroundColor: 'transparent', caretColor: '#059669', textAlign: textAlign as any }}
                                 />
                               )
                             ) : (
@@ -943,7 +972,6 @@ export default function HisabXLScreen() {
                   ))}
                 </tbody>
               </table>
-            </div>
             </div>
           </div>
         </div>
