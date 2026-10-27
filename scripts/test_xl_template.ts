@@ -26,6 +26,10 @@ import {
   mirrorSetMonthDoc,
   mirrorListMonths
 } from '../src/lib/hisabMirror';
+import {
+  journalPush, journalRemove, readJournal, pendingOpsForDoc, journalClear
+} from '../src/lib/obJournal';
+import type { OutboxEntry } from '../src/lib/obJournal';
 
 let pass = 0;
 let fail = 0;
@@ -201,6 +205,45 @@ check('NaN -> null', formatPercentDisplay('0%', NaN) === null);
 // SSF cross-check: fraction 0.05 se kya dikhta hai
 check('SSF confirms 0.05 = "5%"', XLSX.SSF.format('0%', 0.05) === '5%');
 check('SSF bug repro: 5 = "500%" tha', XLSX.SSF.format('0%', 5) === '500%');
+
+console.log('\n=== 10. REFRESH-SAFETY (Boss 27 Oct: refresh par entries gayab bug) ===');
+// THE DATA-DESTROYER REPRO (purana bug): ensureCurrentMonth har refresh par
+// fresh template usi opId se journal me push karta tha jisme Boss ke pending
+// edits the — journalPush same-opId REPLACE = edits journal se MIT. Ye test
+// journal-layer contract pin karta hai jispe naya mirror-first ensure bana hai.
+journalClear();
+const g10 = globalThis as { __OB_STORE__?: Record<string, string> };
+g10.__OB_STORE__ = {}; // fresh shim (mirror tests ke store se alag namespace)
+const sheetOp = (grid: CellValue[][]): OutboxEntry => ({
+  opId: 'hisab-s-2026-10-27',
+  col: 'hisab/2026-10/sheets',
+  docId: '27',
+  payload: { name: '27', grid, merges: [], cols: [], updatedAtLocal: Date.now() },
+  merge: false,
+  at: Date.now(),
+  tries: 0
+});
+// Boss ne 2 entries likhi -> journal me pending (write timeout hua)
+journalPush(sheetOp([['567.30', 5]]));
+check('pending op visible for sheet 27', pendingOpsForDoc('hisab/2026-10/sheets', '27') === 1);
+check('pending op col+doc scoped (26 = 0)', pendingOpsForDoc('hisab/2026-10/sheets', '26') === 0);
+// PURANA DESTROYER: ab ensure wala "fresh template" SAME opId se push hota -> REPLACE
+const before = JSON.stringify(readJournal()[0].payload);
+journalPush(sheetOp([[null]])); // blank template, same opId
+const after = readJournal()[0].payload as { grid: CellValue[][] };
+check('same-opId push REPLACES (journal contract)', readJournal().length === 1 && Array.isArray(after.grid));
+check('destroyer repro documented (blank replaces edits)', JSON.stringify(after) !== before && Array.isArray(after.grid[0]) === true);
+// NAYA MIRROR-FIRST CONTRACT: mirror me latest hai to ensure mirror state
+// re-queue karta hai (blank nahi) — simulation: mirror write phir same-opId push
+mirrorSetSheet('2026-10', '27', { grid: [['567.30', 5]] as unknown as (string | number | null)[][], merges: [], cols: [] });
+const mir27 = mirrorGetSheet('2026-10', '27');
+check('mirror holds Boss data with timestamp', !!mir27 && typeof mir27.at === 'number' && mir27.at > 0);
+check('mirror survives journal replace', (mirrorGetSheet('2026-10', '27')!.grid as unknown[][])[0][1] === 5);
+// pendingOpsForDoc delete-op (payload undefined) count NAHI karta
+journalPush({ opId: 'obd-x', col: 'hisab/2026-10/sheets', docId: '30', payload: undefined, merge: false, at: Date.now(), tries: 0 });
+check('delete op not counted as pending write', pendingOpsForDoc('hisab/2026-10/sheets', '30') === 0);
+// cleanup
+journalClear();
 
 console.log(`\n========== RESULT: ${pass} PASS, ${fail} FAIL ==========`);
 process.exit(fail === 0 ? 0 : 1);

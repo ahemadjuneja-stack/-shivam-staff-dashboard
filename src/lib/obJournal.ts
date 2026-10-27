@@ -88,6 +88,15 @@ export function journalPending(): number {
   return readJournal().length;
 }
 
+// REFRESH-SAFETY (Boss order 2026-10-27: "kitna bhi refresh karo jo likh diya
+// wo jab tak change na kare jaana nahi chahiye"): batata hai is doc ke liye
+// journal me UNSENT write pending hai ya nahi. Load path ise padhta hai —
+// pending ho to LOCAL state (mirror) authoritative hai, Firestore purana ho
+// sakta hai (write abhi flush nahi hua). obSetPath entries ka col = slash-path.
+export function pendingOpsForDoc(col: string, docId: string): number {
+  return readJournal().filter((e) => e.col === col && e.docId === docId && !!e.payload).length;
+}
+
 export function journalClear() {
   writeJournal([]);
 }

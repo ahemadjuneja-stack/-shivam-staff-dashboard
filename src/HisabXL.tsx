@@ -36,7 +36,7 @@ import {
   ALL_SHEET_NAMES,
   formatPercentDisplay
 } from './hisabXL';
-import { obSetPath, OutboxBanner } from './lib/outbox';
+import { obSetPath, pendingOpsForDoc, OutboxBanner } from './lib/outbox';
 import { mirrorGetSheet, mirrorSetSheet, mirrorGetMonthDoc, mirrorSetMonthDoc } from './lib/hisabMirror';
 
 const MONTH_NAMES = [
@@ -217,25 +217,32 @@ export default function HisabXLScreen() {
   // TEMPLATE / MIRROR FALLBACK CHAIN (offline-first home)
   // Firestore doc na mile (offline / naya month) -> mirror -> fresh template
   // ============================================================
+  // Mirror -> SheetData (day sheets = engine processed). REFRESH-SAFETY ke
+  // liye alag helper — load path ab mirror-vs-remote freshness me bhi use karta hai.
+  const mirrorToSheetData = useCallback((monthId: string, name: string): SheetData | null => {
+    const mir = mirrorGetSheet(monthId, name);
+    if (!mir) return null;
+    const isDay = isDaySheetName(name);
+    const grid = isDay ? runFormulaEngine(mir.grid).grid : mir.grid;
+    return {
+      name,
+      grid,
+      merges: mir.merges || [],
+      cols: mir.cols || [],
+      styleTable: isDay ? (CANON_TABLE as unknown as Record<string, unknown>[]) : undefined,
+      styleIndex: isDay ? CANON_INDEX : undefined,
+      fromMirror: true
+    } as SheetData & { fromMirror?: boolean };
+  }, []);
+
   const buildFallbackSheet = useCallback((monthId: string, name: string): SheetData => {
     const isDay = isDaySheetName(name);
-    const mir = mirrorGetSheet(monthId, name);
-    if (mir) {
-      const grid = isDay ? runFormulaEngine(mir.grid).grid : mir.grid;
-      return {
-        name,
-        grid,
-        merges: mir.merges || [],
-        cols: mir.cols || [],
-        styleTable: isDay ? (CANON_TABLE as unknown as Record<string, unknown>[]) : undefined,
-        styleIndex: isDay ? CANON_INDEX : undefined,
-        fromMirror: true
-      } as SheetData & { fromMirror?: boolean };
-    }
+    const fromMirror = mirrorToSheetData(monthId, name);
+    if (fromMirror) return fromMirror;
     const tpl = isDay ? buildDaySheetTemplate(Number(name)) : buildReminderTemplate();
     const grid = isDay ? runFormulaEngine(tpl.grid).grid : tpl.grid;
     return templateToSheetData(name, { ...tpl, grid }, isDay);
-  }, []);
+  }, [mirrorToSheetData]);
 
   // Naya (ya mirror-me-bana) month ensure karo: list me daalo + month doc +
   // aaj ki day sheet Firestore par queue karo (deterministic opId — idempotent)
@@ -261,16 +268,40 @@ export default function HisabXLScreen() {
     );
     mirrorSetMonthDoc(monthId, { label, sheetNames: ALL_SHEET_NAMES });
 
-    // Aaj ka din Firestore par bhi banta hai (fresh 0 — Boss rule: roz naya date)
+    // Aaj ka din Firestore par queue hota hai — REFRESH-SAFETY FIX (Boss order
+    // 2026-10-27: 'poore box me jo bhi details feel kar do wapis refresh karo to
+    // sab entry gayab ho jati hai'): PEHLE ye path HI DATA DESTROYER tha — har
+    // refresh par (month doc jab tak Firestore me nahi aata) FRESH BLANK
+    // template usi deterministic opId (hisab-s-{month}-{today}) se journal me
+    // push hota tha, aur journalPush same-opId ko REPLACE karta hai => Boss ke
+    // PENDING edits ka journal entry MIT jata tha + mirrorSetSheet ne mirror bhi
+    // blank kar deta tha = 4-layer wipe (L2 journal + L4 mirror + flush par L1
+    // Firestore merge:false overwrite). AB: mirror PEHLE check — mirror hai to
+    // USI ka latest state re-queue (journal converge to latest local state),
+    // mirror ko KABHI overwrite nahi; bilkul naya din ho tabhi fresh template.
     const today = todayDayStr();
-    const todayTpl = buildDaySheetTemplate(Number(today));
-    const todayProcessed = runFormulaEngine(todayTpl.grid).grid;
-    const todayDoc = templateToSheetData(today, { ...todayTpl, grid: todayProcessed }, true);
-    obSetPath(['hisab', monthId, 'sheets', today], { ...todayDoc, updatedAtLocal: Date.now() }, {
-      merge: false,
-      opId: `hisab-s-${monthId}-${today}`
-    });
-    mirrorSetSheet(monthId, today, { grid: todayProcessed, merges: todayDoc.merges, cols: todayDoc.cols });
+    const todayMirror = mirrorGetSheet(monthId, today);
+    if (todayMirror) {
+      obSetPath(['hisab', monthId, 'sheets', today], {
+        name: today,
+        grid: todayMirror.grid,
+        merges: todayMirror.merges || [],
+        cols: todayMirror.cols || [],
+        styleTable: CANON_TABLE as unknown as Record<string, unknown>[],
+        styleIndex: CANON_INDEX,
+        updatedAtLocal: Date.now()
+      }, { merge: false, opId: `hisab-s-${monthId}-${today}` });
+      // mirror UNTOUCHED — wahi Boss ka latest data hai
+    } else {
+      const todayTpl = buildDaySheetTemplate(Number(today));
+      const todayProcessed = runFormulaEngine(todayTpl.grid).grid;
+      const todayDoc = templateToSheetData(today, { ...todayTpl, grid: todayProcessed }, true);
+      obSetPath(['hisab', monthId, 'sheets', today], { ...todayDoc, updatedAtLocal: Date.now() }, {
+        merge: false,
+        opId: `hisab-s-${monthId}-${today}`
+      });
+      mirrorSetSheet(monthId, today, { grid: todayProcessed, merges: todayDoc.merges, cols: todayDoc.cols });
+    }
 
     return [synthetic, ...list];
   }, []);
@@ -398,7 +429,27 @@ export default function HisabXLScreen() {
       .then((sheetData) => {
         if (!isMounted) return;
         if (sheetData) {
-          cacheIt(sheetData);
+          // ============================================================
+          // REFRESH-SAFETY (Boss order 2026-10-27: 'kisi bhi haal me kitna
+          // bhi refresh karo jo likh diya wo jab tak change na kare jaana
+          // nahi chahiye'): Firestore doc milne par bhi LOCAL latest state
+          // check — (a) journal me is sheet ka UNSENT write pending hai
+          // (net slow/offline — Firestore purana data dikhayega hi), ya
+          // (b) mirror Firestore se BHI naya hai (offline edit hua tha) —
+          // dono me LOCAL (mirror) jeeta. Warna refresh par pending edits
+          // 'gayab' dikhte the (flush + dobara reload tak).
+          // ============================================================
+          const col = `hisab/${selectedMonthId}/sheets`;
+          const pending = pendingOpsForDoc(col, activeSheetName);
+          const remoteAt = Number(sheetData.updatedAtLocal || 0);
+          const rawMir = mirrorGetSheet(selectedMonthId, activeSheetName);
+          const mir = mirrorToSheetData(selectedMonthId, activeSheetName);
+          if (mir && rawMir && (pending > 0 || rawMir.at > remoteAt)) {
+            // mirror state already engine-processed hai (mirrorToSheetData)
+            cacheIt(mir);
+          } else {
+            cacheIt(sheetData);
+          }
         } else {
           // Doc nahi mila (naya month / kabhi sync nahi hua) -> mirror/template
           cacheIt(buildFallbackSheet(selectedMonthId, activeSheetName));

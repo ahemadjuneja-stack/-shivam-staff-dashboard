@@ -20,6 +20,7 @@ export interface SheetData {
   styleTable?: Record<string, unknown>[];   // unique style objects for this sheet
   styleIndex?: (number | null)[][];         // 53x37 indexes into styleTable (null = no style)
   updatedAt?: unknown;
+  updatedAtLocal?: number; // REFRESH-SAFETY (Boss 2026-10-27): handleSaveCell ka local write timestamp — mirror-vs-remote freshness compare ke liye
 }
 
 export interface MonthDoc {
@@ -643,7 +644,8 @@ export async function loadSheetFromFirestore(
     cols: Array.isArray(data.cols) ? data.cols : [],
     styleTable,
     styleIndex,
-    updatedAt: data.updatedAt
+    updatedAt: data.updatedAt,
+    updatedAtLocal: Number(data.updatedAtLocal || 0)
   };
 }
 

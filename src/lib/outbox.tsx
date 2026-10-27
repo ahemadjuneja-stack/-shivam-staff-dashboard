@@ -110,6 +110,10 @@ export async function obDel(col: string, docId: string) {
   }
 }
 
+// REFRESH-SAFETY (Boss order 2026-10-27): pendingOpsForDoc ab obJournal.ts me
+// rehta hai (pure layer, node-testable) — neeche re-export for convenience.
+export { pendingOpsForDoc } from './obJournal';
+
 // ---------- flush engine (FIFO replay — order preserved, same-doc ops sequence safe) ----------
 
 let flushing = false;
