@@ -15,6 +15,16 @@ export interface UserProfile {
   xlCities?: string[];
   pin?: string; // login PIN on file (dashboard registration/PIN reset ke liye)
   photo?: string; // PROFILE DP (Boss order 2026-10-27) — staff app se compressed JPEG dataURL
+  deviceModel?: string;
+  osVersion?: string;
+  appVersion?: string;
+  appVersionCode?: number;
+  lastSeenAt?: number;
+  lastLocation?: {
+    lat: number;
+    lng: number;
+    at: number;
+  };
 }
 
 // LINE SCHEDULE (Boss order 2026-10-27): salesman tour plan — kis date kis

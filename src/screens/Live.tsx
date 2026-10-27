@@ -3,7 +3,7 @@ import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestor
 import { db } from '../firebase';
 import { PunchRecord, LedgerEntry, ViolationRecord } from '../types';
 
-export default function LiveScreen() {
+export default function LiveScreen({ onSelectUser }: { onSelectUser?: (uid: string) => void }) {
   const [punches, setPunches] = useState<PunchRecord[]>([]);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [violations, setViolations] = useState<ViolationRecord[]>([]);
@@ -170,7 +170,13 @@ export default function LiveScreen() {
                           p.type === 'in' ? 'bg-emerald-400' : 'bg-slate-500'
                         }`}
                       ></span>
-                      <p className="text-xs font-bold text-white">{p.name || 'Staff Member'}</p>
+                      <p
+                        onClick={() => p.uid && onSelectUser && onSelectUser(p.uid)}
+                        className="text-xs font-bold text-white cursor-pointer hover:text-indigo-400 hover:underline transition"
+                        title="Click to view full staff detail"
+                      >
+                        {p.name || 'Staff Member'}
+                      </p>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
                       {new Date(p.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} • Dist: {Math.round(p.distM ?? p.dist ?? 0)}m from shop

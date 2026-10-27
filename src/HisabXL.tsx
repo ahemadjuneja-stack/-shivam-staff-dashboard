@@ -633,101 +633,96 @@ export default function HisabXLScreen() {
         </div>
       )}
 
-      {/* ===== LIGHT MONEY-APP HEADER (Paytm Business style — Boss choice) ===== */}
-      <div className="border-b border-slate-200/80 bg-white/85 backdrop-blur">
+      {/* ===== LIGHT MONEY-APP HEADER (Paytm Business style — consolidated top bar) ===== */}
+      <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 shadow-sm shadow-slate-900/5 backdrop-blur">
         <div className="h-[2px] w-full flow-line bg-gradient-to-r from-emerald-400 via-indigo-400 via-violet-400 to-emerald-400" />
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 shadow-lg shadow-emerald-500/30 ring-1 ring-emerald-300/50">
-              <FileSpreadsheet className="h-6 w-6 text-white" />
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 shadow-md shadow-emerald-500/25 ring-1 ring-emerald-300/50">
+              <FileSpreadsheet className="h-5 w-5 text-white" />
             </div>
             <div className="leading-tight">
-              <h1 className="cash-title text-2xl font-black tracking-[0.06em]">CASH COUNTER</h1>
-              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-600">Daily Excel Accounts — Chart /10</p>
+              <h1 className="cash-title text-xl font-black tracking-[0.06em]">CASH COUNTER</h1>
+              <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-600">Daily Excel Accounts — Chart /10</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-50 px-3 py-1.5 text-[10px] font-black tracking-wider text-emerald-700">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Month Selector Dropdown */}
+            <select
+              value={selectedMonthId}
+              onChange={(e) => {
+                setSelectedMonthId(e.target.value);
+                setSheetsCache({});
+              }}
+              disabled={loadingMonths || months.length === 0}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/25 focus:outline-none disabled:opacity-50"
+            >
+              {months.length === 0 ? (
+                <option value="">(No months yet)</option>
+              ) : (
+                months.map((m) => (
+                  <option key={m.monthId} value={m.monthId}>
+                    {m.label} ({m.sheetNames?.length || 0} sheets){m.synthetic ? ' • auto' : ''}
+                  </option>
+                ))
+              )}
+            </select>
+
+            {/* Day navigation buttons — pichli / agli sheet */}
+            <button
+              onClick={() => dayNav(-1)}
+              title="Pichli sheet"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-md hover:shadow-emerald-500/20 disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => dayNav(1)}
+              title="Agli sheet"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-md hover:shadow-emerald-500/20 disabled:opacity-40"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <button
+              onClick={jumpToday}
+              title="Aaj ki sheet par jump karo (fresh 0)"
+              className="btn-shine flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 text-[11px] font-black tracking-wide text-white shadow-md shadow-blue-600/25 ring-1 ring-blue-300/30 transition-all hover:-translate-y-px hover:shadow-lg disabled:opacity-40"
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              TODAY
+            </button>
+            <button
+              onClick={() => fetchMonths(false, selectedMonthId)}
+              title="Refresh Months"
+              disabled={loadingMonths}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-md hover:shadow-emerald-500/20 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-blue-500' : ''}`} />
+            </button>
+
+            <span className="mx-1 hidden h-5 w-px bg-slate-300 lg:block" />
+
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-50 px-2.5 py-1.5 text-[10px] font-black tracking-wider text-emerald-700">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
               </span>
               LIVE SYNC
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-50 px-3 py-1.5 text-[10px] font-black tracking-wider text-blue-700 ring-1 ring-inset ring-blue-300/30">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-50 px-2.5 py-1.5 text-[10px] font-black tracking-wider text-blue-700 ring-1 ring-inset ring-blue-300/30">
               <Calendar className="h-3 w-3" />
               TODAY • {todayLabel}
             </span>
             <button
               onClick={handleDownloadWorkbook}
               disabled={!currentMonth || !selectedMonthId}
-              className="btn-shine btn-pulse flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/30 ring-1 ring-emerald-300/40 transition-all hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-xl hover:shadow-emerald-500/40 disabled:translate-y-0 disabled:opacity-40"
+              className="btn-shine btn-pulse flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-300/40 transition-all hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-lg hover:shadow-emerald-500/40 disabled:translate-y-0 disabled:opacity-40"
             >
               <Download className="h-3.5 w-3.5" />
               <span>XL Download</span>
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* ===== CONTROL TOOLBAR (sticky light money-app bar) ===== */}
-      <div className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 shadow-sm shadow-slate-900/5 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-2 px-4 py-2">
-          {/* Month Selector Dropdown */}
-          <select
-            value={selectedMonthId}
-            onChange={(e) => {
-              setSelectedMonthId(e.target.value);
-              setSheetsCache({});
-            }}
-            disabled={loadingMonths || months.length === 0}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/25 focus:outline-none disabled:opacity-50"
-          >
-            {months.length === 0 ? (
-              <option value="">(No months yet)</option>
-            ) : (
-              months.map((m) => (
-                <option key={m.monthId} value={m.monthId}>
-                  {m.label} ({m.sheetNames?.length || 0} sheets){m.synthetic ? ' • auto' : ''}
-                </option>
-              ))
-            )}
-          </select>
-
-          <span className="mx-1 hidden h-5 w-px bg-slate-300 sm:block" />
-
-          {/* Day navigation buttons — pichli / agli sheet */}
-          <button
-            onClick={() => dayNav(-1)}
-            title="Pichli sheet"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => dayNav(1)}
-            title="Agli sheet"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <button
-            onClick={jumpToday}
-            title="Aaj ki sheet par jump karo (fresh 0)"
-            className="btn-shine flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 text-[11px] font-black tracking-wide text-white shadow-lg shadow-blue-600/25 ring-1 ring-blue-300/30 transition-all hover:-translate-y-px hover:shadow-xl disabled:opacity-40"
-          >
-            <Calendar className="h-3.5 w-3.5" />
-            TODAY
-          </button>
-          <button
-            onClick={() => fetchMonths(false, selectedMonthId)}
-            title="Refresh Months"
-            disabled={loadingMonths}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 shadow-sm transition hover:border-emerald-400 hover:text-emerald-600 hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loadingMonths ? 'animate-spin text-blue-500' : ''}`} />
-          </button>
         </div>
       </div>
 
