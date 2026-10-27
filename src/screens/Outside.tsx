@@ -124,7 +124,7 @@ export default function OutsideScreen() {
   const [mins, setMins] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const t = window.setInterval(() => setTick((x) => x + 1), 1000);
+    const t = window.setInterval(() => { if (!document.hidden) setTick((x) => x + 1); }, 1000); // BATTERY GUARD: hidden = tick skip
     return () => window.clearInterval(t);
   }, []);
 

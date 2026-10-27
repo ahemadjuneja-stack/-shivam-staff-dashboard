@@ -5,7 +5,7 @@ import {
   signOut,
   User
 } from 'firebase/auth';
-import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, disableNetwork, enableNetwork } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import {
   Table,
@@ -33,7 +33,7 @@ import SalesmanXL from './screens/SalesmanXL';
 import ToursScreen from './screens/Tours';
 import TourHisabScreen from './screens/TourHisab';
 import { UserProfile } from './types';
-import { initOutboxEngine } from './lib/outbox';
+import { initOutboxEngine, flushOutbox } from './lib/outbox';
 import ShivamLogo from './components/ShivamLogo';
 
 type NavTab = 'hisabxl' | 'tour' | 'workers' | 'tours' | 'live' | 'outside' | 'hisab' | 'settings';
@@ -92,6 +92,32 @@ export default function App() {
     // OFFLINE-FIRST ENGINE (Boss order 2026-10-27): outbox flush — net aane
     // par journal writes Firestore par, online event + 90s loop + mount flush
     initOutboxEngine();
+  }, []);
+
+  useEffect(() => {
+    // ===== BATTERY GUARD (Boss complaint 2026-10-27: 'app background me
+    // battery bahut le raha hai' — Android: 11h30m background time) =====
+    // App hidden = poora system SO jata hai:
+    //   1. disableNetwork(db) — Firestore WebSocket DISCONNECT (listeners
+    //      registered rehte hai, data flow band). Background me radio wakeup 0.
+    //   2. Visible wapas = enableNetwork(db) — Firestore khud sab listeners
+    //      RESYNC karta hai (guaranteed) + outbox journal flush.
+    // Foreground behavior 100% same — sirf background me battery bachti hai.
+    const onVis = () => {
+      try {
+        if (document.hidden) {
+          disableNetwork(db);
+        } else {
+          enableNetwork(db);
+          window.setTimeout(() => { flushOutbox(); }, 900);
+        }
+      } catch { /* ignore */ }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    if (typeof document !== 'undefined' && document.hidden) {
+      try { disableNetwork(db); } catch { /* ignore */ }
+    }
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
   useEffect(() => {

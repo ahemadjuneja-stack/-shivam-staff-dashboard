@@ -797,10 +797,13 @@ export default function HisabXLScreen() {
         </div>
       ) : (
         <div className="relative px-4 pb-8 pt-3">
-          {/* Ambient soft glow blobs — light theme par pastel depth */}
-          <div className="pointer-events-none absolute -top-8 left-16 h-44 w-44 rounded-full bg-emerald-400/25 blur-3xl" style={{ animation: 'blobDrift 9s ease-in-out infinite' }} />
-          <div className="pointer-events-none absolute right-24 top-10 h-52 w-52 rounded-full bg-blue-400/25 blur-3xl" style={{ animation: 'blobDrift 11s ease-in-out infinite 1.2s' }} />
-          <div className="pointer-events-none absolute bottom-10 left-1/3 h-40 w-40 rounded-full bg-violet-400/20 blur-3xl" style={{ animation: 'blobDrift 13s ease-in-out infinite 0.6s' }} />
+          {/* Ambient soft glow blobs — light theme par pastel depth.
+              BATTERY FIX 27 Oct: blur-3xl (64px GPU filter) ki jagah
+              radial-gradient — SAME soft look, filter cost ZERO.
+              blobDrift transform/opacity animation = compositor-only, cheap. */}
+          <div className="pointer-events-none absolute -top-8 left-16 h-44 w-44" style={{ background: 'radial-gradient(circle closest-side, rgba(52, 211, 153, 0.28) 0%, rgba(52, 211, 153, 0) 72%)', animation: 'blobDrift 9s ease-in-out infinite' }} />
+          <div className="pointer-events-none absolute right-24 top-10 h-52 w-52" style={{ background: 'radial-gradient(circle closest-side, rgba(96, 165, 250, 0.28) 0%, rgba(96, 165, 250, 0) 72%)', animation: 'blobDrift 11s ease-in-out infinite 1.2s' }} />
+          <div className="pointer-events-none absolute bottom-10 left-1/3 h-40 w-40" style={{ background: 'radial-gradient(circle closest-side, rgba(167, 139, 250, 0.24) 0%, rgba(167, 139, 250, 0) 72%)', animation: 'blobDrift 13s ease-in-out infinite 0.6s' }} />
           {/* LIGHT MONEY-APP grid card — white glass, soft shadow, top accent strip */}
           <div className="relative overflow-hidden rounded-2xl bg-white shadow-[0_24px_70px_-28px_rgba(15,40,90,0.35)] ring-1 ring-slate-200/80">
             <div className="h-[3px] w-full flow-line bg-gradient-to-r from-emerald-400 via-blue-400 via-violet-400 to-emerald-400" />

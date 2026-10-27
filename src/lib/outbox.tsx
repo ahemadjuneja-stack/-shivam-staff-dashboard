@@ -117,6 +117,9 @@ let flushing = false;
 export async function flushOutbox(): Promise<number> {
   if (flushing) return 0;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
+  // BATTERY GUARD (Boss 2026-10-27): app background me koi network write
+  // attempt nahi — journal entries safe rehti hai, app khulne par flush.
+  if (typeof document !== 'undefined' && document.hidden) return 0;
   flushing = true;
   let done = 0;
   try {
@@ -149,6 +152,7 @@ export function initOutboxEngine() {
   if (engineOn || typeof window === 'undefined') return;
   engineOn = true;
   window.addEventListener('online', () => { setTimeout(() => flushOutbox(), 800); });
+  // 90s loop — background me flushOutbox khud guard hota hai (upar), koi wakeup-cost nahi
   window.setInterval(() => { if (navigator.onLine) flushOutbox(); }, 90_000);
   if (navigator.onLine) window.setTimeout(() => flushOutbox(), 2500);
 }
@@ -168,7 +172,8 @@ export function useOutboxStatus(): { online: boolean; pending: number; lastSync:
     window.addEventListener('online', up);
     window.addEventListener('offline', up);
     window.addEventListener('ob-changed', up);
-    const t = window.setInterval(up, 4000);
+    // BATTERY GUARD: background me 4s poll band — localStorage reads + re-render 0
+    const t = window.setInterval(() => { if (!document.hidden) up(); }, 4000);
     return () => {
       window.removeEventListener('online', up);
       window.removeEventListener('offline', up);

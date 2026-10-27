@@ -68,7 +68,9 @@ body {
 .xl-scroll { scrollbar-color: #9fb0d1 #eef2f9; }
 
 /* ===== TASK 74 — PREMIUM PRODUCT FINISH (Boss: 'high level professional, XL jaisa na lage') ===== */
-/* Button shine sweep — hero buttons par soft light sweep (boring screen nahi) */
+/* Button shine sweep — hero buttons par soft light sweep (boring screen nahi).
+   BATTERY FIX 27 Oct: 'left' layout-paint animation tha (har frame repaint) —
+   ab transform translateX (GPU compositor-only, repaint 0). Same visual. */
 .btn-shine { position: relative; overflow: hidden; }
 .btn-shine::after {
   content: '';
@@ -79,13 +81,13 @@ body {
   height: 100%;
   background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.38), transparent);
   transform: skewX(-20deg);
+  will-change: transform;
   animation: btnShineSweep 3.4s ease-in-out infinite;
   pointer-events: none;
 }
 @keyframes btnShineSweep {
-  0% { left: -80%; }
-  55% { left: 140%; }
-  100% { left: 140%; }
+  0% { transform: translateX(0) skewX(-20deg); }
+  55%, 100% { transform: translateX(489%) skewX(-20deg); }
 }
 
 /* ===== TASK 76 — LIGHT PREMIUM MONEY-APP MOTION LAYER ===== */
@@ -149,3 +151,20 @@ body {
 /* Flowing energy hairline — header ke niche behti light line */
 @keyframes lineFlow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
 .flow-line { background-size: 200% 100%; animation: lineFlow 6s linear infinite; }
+
+/* ===== BATTERY SAVER (Boss complaint 27 Oct: 'app background me battery bahut
+   le raha hai' — foreground bhi 50min me 10% = heavy repaints) =====
+   Phones par repaint-heavy infinite animations OFF — static gradients wahi
+   premium look dete hai, par GPU har frame poora repaint nahi karta.
+   PC (min-width > 640px) par SAB animations pehle jaise chalte rahenge.
+   prefers-reduced-motion users ko bhi same respect. */
+@media (max-width: 640px), (prefers-reduced-motion: reduce) {
+  .hdr-anim { animation: none !important; background-position: 0% 50%; }
+  .cell-glow { animation: none !important; text-shadow: 0 0 7px rgba(5, 150, 105, 0.32); }
+  .btn-pulse { animation: none !important; }
+  .btn-shine::after { animation: none !important; opacity: 0; }
+  .flow-line { animation: none !important; }
+  .cash-title { animation: none !important; background-position: 50% center; }
+  .shivam-silver-shine,
+  .shivam-silver-shine-slow { animation: none !important; background-position: 50% center; }
+}
