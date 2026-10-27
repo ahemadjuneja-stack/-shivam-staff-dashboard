@@ -63,6 +63,24 @@ service cloud.firestore {
     match /hisab/{document=**} {
       allow read, write: if isAdmin();
     }
+    // ===== TOURS (Task 93, Boss 2026-10-28): tour paste + salesman hisab =====
+    // NOTE: live rules staff-app repo se deploy hote hain (CI) — wahan open
+    // hain; ye file dashboard-repo ka reference hai (agar kabhi yahan se
+    // deploy ho to tours ke rules ye hone chahiye):
+    //   - tour doc: sab logged-in read, admin write
+    //   - hisab/{uid}: sab logged-in read (boss view), uid khud likhe,
+    //     admin sab — delete sirf admin
+    match /tours/{tourId} {
+      allow read: if request.auth != null;
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+      match /hisab/{uid} {
+        allow read: if request.auth != null;
+        allow create, update: if request.auth != null
+          && (request.auth.uid == uid || isAdmin());
+        allow delete: if isAdmin();
+      }
+    }
     // ===== TEMPORARY BRIDGES — Fix 3A + migration complete hone ke baad delete =====
     match /staff_users/{uid} {
       allow read: if true;

@@ -8,6 +8,7 @@ import { db, auth } from '../firebase';
 import { obSet, obDel, OutboxBanner } from '../lib/outbox';
 import { ThRoute, ThParty, ThBill, ThUpload } from '../types';
 import { fmtRs, parseRsInput, cellToPaise, todayStr } from '../lib/cbMoney';
+import TourPasteSection from './TourPaste';
 import * as XLSX from 'xlsx';
 
 // ============================================================
@@ -372,6 +373,14 @@ export default function TourHisabScreen() {
   return (
     <div className="space-y-5">
       <OutboxBanner />
+
+      {/* ============ TOUR PASTE + SALESMAN LIVE (Task 93, Boss 2026-10-28)
+          Miracle/PDF paste -> Tour -> staff app me salesman hisab + JAMA ->
+          yahan LIVE per-salesman view ============ */}
+      <TourPasteSection />
+
+      <div className="border-t border-slate-800" />
+
       {/* header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
         <div>
@@ -379,7 +388,7 @@ export default function TourHisabScreen() {
             <Truck className="h-5 w-5 text-cyan-400" /> TOUR HISAB — MIRACLE XL
             <span className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black text-cyan-400">REAL RUPEES</span>
           </h2>
-          <p className="mt-1 text-xs text-slate-400">Miracle export upload karo — parse, 3-layer checks, salesman settlement (Cash / UPI / Cheque / Kharcha / Aangadiya / Haath-me-bacha). Salesman system = real ₹ (3456 = ₹3,456).</p>
+          <p className="mt-1 text-xs text-slate-400">Miracle XL FILE upload system (purana) — parse, 3-layer checks, route settlement (Cash / UPI / Cheque / Kharcha / Aangadiya / Haath-me-bacha). Upar wala PASTE system salesman-wala hai.</p>
         </div>
       </div>
 

@@ -330,3 +330,90 @@ export interface ThUpload {
   routes: ThRoute[];
   checks: { ok: boolean; issues: string[] };
 }
+
+// ============================================================
+// TOUR HISAB — TOUR PASTE + SALESMAN LIVE (Task 93, Boss order
+// 2026-10-28): "Dashboard me tour hisab box me aysa pdf ya Miracle
+// software se data past kiya jayga... Sab se pehle puchega ke wo
+// kis Tour ka hai? Us tour ka naam dikhana hoga jo salesman ko bhi
+// dikhega... Salesman hisab likhega — GR, less, kitna paisa diya —
+// aur sab data save ho jana chahiye. Tour section me live dono
+// salesman ke alag alag hisab."
+// Money = integer PAISE (real ₹) — ThX convention.
+// Collection `tours/{id}` + salesman hisab `tours/{id}/hisab/{uid}`.
+// ============================================================
+export interface TourBill {
+  date: string;   // '15/09/2026' (sheet jaisa)
+  no: string;     // orphan bill no (rare)
+  days: number;
+  amtP: number;   // bill amount
+  balP: number;   // printed running balance
+  recvP: number;  // Miracle data me received
+  lessP: number;  // less/discount
+  mode: number;   // 1=Cash 2=UPI 3=Cheque (0 = nahi)
+}
+
+export interface TourShop {
+  key: string;    // 'c0-s3' — hisab entries isi key se map
+  code: string;   // 'PORBANDAR-3@!'
+  name: string;   // 'KANAIYA BANGELS'
+  billsP: number; // total bill amount
+  recvP: number;  // Miracle received total
+  balP: number;   // aakhri printed balance
+  bills: TourBill[];
+}
+
+export interface TourCity {
+  name: string;   // 'PORBANDAR'
+  date?: string;  // header date
+  shops: TourShop[];
+  lessRGP?: number; // payment-details 'less R.Goods'
+  cashP?: number;   // payment-details cash
+  upiP?: number;
+  cheqP?: number;
+  note?: string;    // payment-details note (jaha jama: 'JND T. T shop')
+}
+
+export interface Tour {
+  kind: 'tour';
+  name: string;      // BOSS-TYPED — salesman ko yahi dikhta hai
+  date?: string;     // tour hisab date (paste se)
+  month: string;     // 'YYYY-MM'
+  cities: TourCity[];
+  summary: { shops: number; billsP: number; recvP: number };
+  sourceText?: string; // original paste (backup, first ~6000 chars)
+  active: boolean;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// salesman-filled (staff app se) — tours/{tourId}/hisab/{uid}
+export interface TourHisabEntry {
+  shopKey: string;
+  cityName: string;
+  shopCode: string;
+  shopName: string;
+  grP: number;    // R.Goods (return goods value)
+  lessP: number;  // less / discount diya
+  paidP: number;  // kitna paisa diya
+  mode: number;   // 1=Cash 2=UPI 3=Cheque
+  note?: string;
+  at: number;
+}
+
+export interface TourDeposit {
+  at: number;
+  amtP: number;
+  mode: number;   // 1=Cash 2=UPI 3=Cheque
+  place: string;  // KAHA jama kiya ('JND T. T shop')
+  note?: string;
+}
+
+export interface TourHisabDoc {
+  uid: string;
+  name: string;
+  updatedAt: number;
+  entries?: Record<string, TourHisabEntry>;
+  deposits?: TourDeposit[];
+}
