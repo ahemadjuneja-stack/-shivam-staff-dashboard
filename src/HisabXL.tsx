@@ -606,6 +606,72 @@ export default function HisabXLScreen() {
   const monthShort = MONTH_NAMES[Number(String(selectedMonthId).split('-')[1] || 1) - 1]?.slice(0, 3) || '';
   const todayLabel = `${String(new Date().getDate()).padStart(2, '0')} ${monthShort && selectedMonthId === realMonthId() ? monthShort.toUpperCase() : ''}`.trim();
 
+  // ===== Horizontal Slide Line ("slide line") Sync & Controls =====
+  // Boss order 2026-10-27: slide line ko yahi par fix kar do page kitna hi upar niche ho
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const sliderScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingFromTable = useRef(false);
+  const isSyncingFromSlider = useRef(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState<number>(2400);
+  const [scrollProgress, setScrollProgress] = useState<number>(0);
+
+  const handleTableScroll = () => {
+    if (isSyncingFromSlider.current) return;
+    isSyncingFromTable.current = true;
+    if (tableScrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = tableScrollRef.current;
+      if (sliderScrollRef.current) {
+        sliderScrollRef.current.scrollLeft = scrollLeft;
+      }
+      const maxScroll = scrollWidth - clientWidth;
+      setScrollProgress(maxScroll > 0 ? Math.round((scrollLeft / maxScroll) * 100) : 0);
+    }
+    requestAnimationFrame(() => {
+      isSyncingFromTable.current = false;
+    });
+  };
+
+  const handleSliderScroll = () => {
+    if (isSyncingFromTable.current) return;
+    isSyncingFromSlider.current = true;
+    if (tableScrollRef.current && sliderScrollRef.current) {
+      tableScrollRef.current.scrollLeft = sliderScrollRef.current.scrollLeft;
+      const { scrollLeft, scrollWidth, clientWidth } = tableScrollRef.current;
+      const maxScroll = scrollWidth - clientWidth;
+      setScrollProgress(maxScroll > 0 ? Math.round((scrollLeft / maxScroll) * 100) : 0);
+    }
+    requestAnimationFrame(() => {
+      isSyncingFromSlider.current = false;
+    });
+  };
+
+  const slideBy = (pixels: number) => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollBy({ left: pixels, behavior: 'smooth' });
+    }
+  };
+
+  const slideTo = (left: number) => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTo({ left, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (tableScrollRef.current) {
+        setTableScrollWidth(tableScrollRef.current.scrollWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    const timer = setTimeout(updateWidth, 400);
+    return () => {
+      window.removeEventListener('resize', updateWidth);
+      clearTimeout(timer);
+    };
+  }, [liveGrid, currentSheet, isMobile, activeSheetName]);
+
   return (
     <div className="hisab-fullbleed flex min-h-screen flex-col bg-gradient-to-b from-[#f5f8fd] via-[#eff4fb] to-[#e9eef9] text-slate-800">
       {/* Toast Notification (light money-app style) */}
@@ -791,7 +857,7 @@ export default function HisabXLScreen() {
           </div>
         </div>
       ) : (
-        <div className="relative px-4 pb-8 pt-3">
+        <div className="relative px-4 pb-24 pt-3">
           {/* Ambient soft glow blobs — light theme par pastel depth.
               BATTERY FIX 27 Oct: blur-3xl (64px GPU filter) ki jagah
               radial-gradient — SAME soft look, filter cost ZERO.
@@ -802,7 +868,12 @@ export default function HisabXLScreen() {
           {/* LIGHT MONEY-APP grid card — white glass, soft shadow, top accent strip */}
           <div className="relative overflow-hidden rounded-2xl bg-white shadow-[0_24px_70px_-28px_rgba(15,40,90,0.35)] ring-1 ring-slate-200/80">
             <div className="h-[3px] w-full flow-line bg-gradient-to-r from-emerald-400 via-blue-400 via-violet-400 to-emerald-400" />
-            <div className="xl-scroll overflow-auto" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+            <div
+              ref={tableScrollRef}
+              onScroll={handleTableScroll}
+              className="xl-scroll overflow-auto"
+              style={{ maxHeight: 'calc(100vh - 140px)' }}
+            >
               <table
                 className="w-max select-text"
                 style={{ minWidth: '100%', fontFamily: "'Comfortaa', 'Segoe UI', sans-serif", borderCollapse: 'separate', borderSpacing: isMobile ? '2px' : '3px' }}
@@ -975,6 +1046,91 @@ export default function HisabXLScreen() {
         </div>
       )}
 
+      {/* ===== FIXED BOTTOM HORIZONTAL SLIDE LINE ("slide line") ===== */}
+      {/* Boss order 2026-10-27: slide line ko yahi par fix kar do page kitna hi upar niche ho */}
+      <div className="fixed bottom-0 left-0 sm:left-20 right-0 z-40 border-t-2 border-slate-300/80 bg-white/95 px-3 py-2 shadow-[0_-8px_30px_rgba(15,40,90,0.18)] ring-1 ring-slate-900/5 backdrop-blur-md">
+        <div className="flex items-center gap-2 max-w-full">
+          {/* Quick jump shortcuts */}
+          <div className="hidden md:flex items-center gap-1 shrink-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1">SLIDE:</span>
+            <button
+              onClick={() => slideTo(0)}
+              title="Go to Department Details (Col A-C)"
+              className="rounded-md border border-emerald-300/60 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition shadow-sm"
+            >
+              🏢 Dept
+            </button>
+            <button
+              onClick={() => slideTo(650)}
+              title="Go to Cash Given (Col M-P)"
+              className="rounded-md border border-amber-300/60 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700 hover:bg-amber-100 transition shadow-sm"
+            >
+              💵 Cash Given
+            </button>
+            <button
+              onClick={() => slideTo(1350)}
+              title="Go to Parcel & Transport (Col Q-AB)"
+              className="rounded-md border border-sky-300/60 bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 hover:bg-sky-100 transition shadow-sm"
+            >
+              📦 Parcel / Bills
+            </button>
+          </div>
+
+          {/* Left Arrow Button */}
+          <button
+            onClick={() => slideBy(isMobile ? -200 : -350)}
+            title="Slide Left"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+
+          {/* Main Slide Line Track (Scrollable Drag Track) */}
+          <div
+            ref={sliderScrollRef}
+            onScroll={handleSliderScroll}
+            className="slide-line-scrollbar flex-1 overflow-x-scroll py-1"
+            style={{
+              scrollbarWidth: 'auto',
+              WebkitOverflowScrolling: 'touch'
+            }}
+          >
+            <div style={{ width: `${Math.max(tableScrollWidth, 1400)}px`, height: '2px' }} />
+          </div>
+
+          {/* Right Arrow Button */}
+          <button
+            onClick={() => slideBy(isMobile ? 200 : 350)}
+            title="Slide Right"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+
+          {/* Position percent indicator */}
+          <span className="hidden sm:inline-block shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-black font-mono text-slate-600 border border-slate-200">
+            {scrollProgress}%
+          </span>
+        </div>
+      </div>
+
+      <style>{`
+        .slide-line-scrollbar::-webkit-scrollbar {
+          height: 12px;
+        }
+        .slide-line-scrollbar::-webkit-scrollbar-track {
+          background: #e2e8f0;
+          border-radius: 9999px;
+        }
+        .slide-line-scrollbar::-webkit-scrollbar-thumb {
+          background: linear-gradient(90deg, #10b981 0%, #3b82f6 100%);
+          border-radius: 9999px;
+          border: 2px solid #ffffff;
+        }
+        .slide-line-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(90deg, #059669 0%, #2563eb 100%);
+        }
+      `}</style>
     </div>
   );
 }
