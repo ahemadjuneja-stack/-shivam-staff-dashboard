@@ -86,6 +86,39 @@ check('AF1 office total = 40', e3.grid[0][31] === 40, `got ${e3.grid[0][31]}`);
 check('B6 = 290 - 40 = 250', e3.grid[5][1] === 250, `got ${e3.grid[5][1]}`);
 check('B16 Expense = 40', e3.grid[15][1] === 40);
 
+console.log('\n=== 3.5 BOSS REAL-CALC SCENARIOS (27 Oct order: 5% -> 5%, Cash Given kam kare) ===');
+// BOSS CASE 1: Less percent — H=2000, I=5 (Boss "5" type karta hai = 5%) -> J=100, K=1900
+const g5 = t27.grid.map((r) => [...r]);
+g5[1][7] = 2000; // H2 Bill Amt
+g5[1][8] = 5;    // I2 Less — Boss percent-style entry
+g5[1][5] = 'Cash';
+const e5 = runFormulaEngine(g5);
+check('Boss case: 2000 ka 5% = 100 (500% nahi)', e5.grid[1][9] === 100, `got ${e5.grid[1][9]}`);
+check('Boss case: K Net = 1900', e5.grid[1][10] === 1900, `got ${e5.grid[1][10]}`);
+// BACKWARD-COMPAT: fraction entry I=0.1 -> 10% (old chart convention safe)
+const g6 = t27.grid.map((r) => [...r]);
+g6[1][7] = 2000;
+g6[1][8] = 0.1;
+const e6 = runFormulaEngine(g6);
+check('fraction compat: I=0.1 -> 200 (10%)', e6.grid[1][9] === 200, `got ${e6.grid[1][9]}`);
+// BOSS CASE 2: Cash Given amount 'Cash Given' (N col) me type kiya -> Cash In Hand kam
+const g7 = t27.grid.map((r) => [...r]);
+g7[2][13] = 200; // N3 — 'Cash Given' header ke niche amount (Boss ka entry style)
+const e7 = runFormulaEngine(g7);
+check('Cash Given N col: B6 = 200-200 = 0', e7.grid[5][1] === 0, `got ${e7.grid[5][1]}`);
+check('Cash Given N col: B16 Expense = 200', e7.grid[15][1] === 200, `got ${e7.grid[15][1]}`);
+// O col (Amount) ab bhi kaam karta hai
+const g8 = t27.grid.map((r) => [...r]);
+g8[2][14] = 50; // O3 Amount
+const e8 = runFormulaEngine(g8);
+check('Cash Given O col: B6 = 200-50 = 150', e8.grid[5][1] === 150, `got ${e8.grid[5][1]}`);
+// N me NAME + O me amount -> dono safe (naam string = 0)
+const g9 = t27.grid.map((r) => [...r]);
+g9[2][13] = 'Sharma Traders';
+g9[2][14] = 80;
+const e9 = runFormulaEngine(g9);
+check('N=name + O=80 -> B6 = 120 (name ignore)', e9.grid[5][1] === 120, `got ${e9.grid[5][1]}`);
+
 console.log('\n=== 4. DEMO FILE REGRESSION (verifySheet — real CHART COPY.xlsx) ===');
 const DEMO = '/home/z/my-project/upload/CHART COPY.xlsx';
 if (fs.existsSync(DEMO)) {

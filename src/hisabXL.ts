@@ -306,7 +306,13 @@ export function runFormulaEngine(grid: CellValue[][]): { grid: CellValue[][]; ch
   for (let r = 1; r < 50; r++) {
     const H = parseNum(normalized[r][7]);
     const I = parseNum(normalized[r][8]);
-    const J = H * I;
+    // EXCEL-PERCENT RULE (Boss order 27 Oct: 'less % galat hai 5% par 500% ho
+    // raha hai... 2000 ka 2000, real calculations'): original chart =H*I Excel
+    // ka percent-autocorrect use karta tha (Excel me "5%" type karne par cell
+    // VALUE 0.05 store hota hai). App me Boss "5" type karta hai to bhi 5% hi
+    // mile — I >= 1 -> percent (I/100); I < 1 -> already fraction (0.05 = 5%).
+    const lessRate = I >= 1 ? I / 100 : I;
+    const J = H * lessRate;
     normalized[r][9] = J === 0 ? null : J;
 
     const K = H - J;
@@ -330,12 +336,17 @@ export function runFormulaEngine(grid: CellValue[][]): { grid: CellValue[][]; ch
     sumAE += AE;
 
     const M = String(normalized[r][12] ?? '').trim();
-    const O = parseNum(normalized[r][14]);
-    const AF = M === '1' ? O : 0;
+    // CASH GIVEN REAL FIX (Boss 27 Oct: 'given money me se agar kisi ko diya
+    // jaye to 200 me se kam hone chahiye'): Boss amount 'Cash Given' (N col)
+    // header ke niche type karta hai — pehle sirf O (Amount) count hota tha isliye
+    // Cash In Hand kam nahi hota tha. Ab DONO columns ke amount judte hai
+    // (N me naam/detail string ho to parseNum 0 deta hai — safe).
+    const givenAmt = parseNum(normalized[r][13]) + parseNum(normalized[r][14]);
+    const AF = M === '1' ? givenAmt : 0;
     normalized[r][31] = AF === 0 ? null : AF;
     sumAF += AF;
 
-    const AG = M === '2' ? O : 0;
+    const AG = M === '2' ? givenAmt : 0;
     normalized[r][32] = AG === 0 ? null : AG;
     sumAG += AG;
 
@@ -694,9 +705,10 @@ export function exportMonthWorkbook(
       for (let r = 2; r <= 50; r++) {
         const r0 = r - 1;
 
-        // J{r}: H{r}*I{r} — ONLY where grid has a numeric value at J{r}
+        // J{r}: EXCEL-PERCENT RULE (Boss 27 Oct real %) — I>=1 -> H*I/100,
+        // else H*I (fraction) — app engine se EXACT match, export bhi real %
         if (isNumericValue(sheet.grid[r0]?.[9])) {
-          setFormulaCell(r0, 9, `H${r}*I${r}`);
+          setFormulaCell(r0, 9, `IF(I${r}>=1,H${r}*I${r}/100,H${r}*I${r})`);
         }
 
         // K{r}: H{r}-J{r}
@@ -711,11 +723,12 @@ export function exportMonthWorkbook(
         // AE{r}: if($E${r}=2,$K${r},0)
         setFormulaCell(r0, 30, `if($E${r}=2,$K${r},0)`);
 
-        // AF{r}: if($M${r}=1,$O${r},0)
-        setFormulaCell(r0, 31, `if($M${r}=1,$O${r},0)`);
+        // AF{r}: if($M${r}=1,SUM($N${r}:$O${r}),0) — Cash Given (N) + Amount (O)
+        // dono count (SUM text/name ignore karta hai — Excel safe, Boss 27 Oct)
+        setFormulaCell(r0, 31, `if($M${r}=1,SUM($N${r}:$O${r}),0)`);
 
-        // AG{r}: if($M${r}=2,$O${r},0)
-        setFormulaCell(r0, 32, `if($M${r}=2,$O${r},0)`);
+        // AG{r}: if($M${r}=2,SUM($N${r}:$O${r}),0)
+        setFormulaCell(r0, 32, `if($M${r}=2,SUM($N${r}:$O${r}),0)`);
 
         // AH{r}: if(F{r}="cash",AD${r},0)
         setFormulaCell(r0, 33, `if(F${r}="cash",AD${r},0)`);
